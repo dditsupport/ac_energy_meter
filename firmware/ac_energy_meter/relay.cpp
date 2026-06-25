@@ -96,11 +96,25 @@ static int parse_hm(const char *s) {
   return h * 60 + m;
 }
 
+// True if `dow` (0..6) is listed in the window's days array.
+static bool day_in(JsonArray days, int dow) {
+  for (JsonVariant d : days) {
+    if (d.as<int>() == dow) return true;
+  }
+  return false;
+}
+
 // Returns the desired state at (dow, minute) given the cached schedule.
 // dow: 0..6 (Sun..Sat). minute: minute-of-day 0..1439.
-// Window semantics: on at `on`, off at `off`. If off <= on, the window
-// wraps midnight (e.g. on=20:00, off=06:00 -> active 20:00-23:59 AND
-// 00:00-06:00 on the same calendar day). Multiple windows OR together.
+//
+// Window semantics: on at `on`, off at `off`, on the selected weekdays.
+//   - Same-day window (on < off): active [on, off) on each selected day.
+//   - Overnight window (off < on): runs past midnight into the NEXT day.
+//     The selected days are the START days. e.g. on=08:00 off=02:00 with
+//     Mon selected => relay ON Mon 08:00 through Tue 02:00. Tuesday's
+//     00:00-02:00 is ON because Monday (the previous day) is selected, NOT
+//     because Tuesday is.
+// Multiple windows OR together.
 static bool desired_state(int dow, int minute) {
   if (!s_initialised || s_schedule_json.length() < 2) return false;
   StaticJsonDocument<1024> doc;
@@ -108,20 +122,22 @@ static bool desired_state(int dow, int minute) {
   JsonArray arr = doc.as<JsonArray>();
   if (arr.isNull() || arr.size() == 0) return false;
 
+  int prev = (dow + 6) % 7;  // yesterday, for overnight tails
   for (JsonObject w : arr) {
     JsonArray days = w["days"].as<JsonArray>();
-    bool day_match = false;
-    for (JsonVariant d : days) {
-      if (d.as<int>() == dow) { day_match = true; break; }
-    }
-    if (!day_match) continue;
     int on  = parse_hm(w["on"]  | (const char *)nullptr);
     int off = parse_hm(w["off"] | (const char *)nullptr);
     if (on < 0 || off < 0 || on == off) continue;
-    bool inside = (on < off)
-        ? (minute >= on && minute < off)
-        : (minute >= on || minute < off);  // wraps midnight
-    if (inside) return true;
+
+    if (on < off) {
+      // Same-day window.
+      if (day_in(days, dow) && minute >= on && minute < off) return true;
+    } else {
+      // Overnight window: [on, 24:00) on the start day, then [00:00, off)
+      // on the following day.
+      if (day_in(days, dow)  && minute >= on)  return true;  // evening, start day
+      if (day_in(days, prev) && minute <  off) return true;  // morning, next day
+    }
   }
   return false;
 }

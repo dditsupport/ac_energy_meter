@@ -121,10 +121,13 @@ $users = $pdo->query('SELECT id, username FROM users ORDER BY username')->fetchA
     <p class="muted" style="margin:0 0 0.75rem">
       Windows turn the relay <b>on</b> at the start time and <b>off</b> at the end time, only on the
       selected weekdays. No windows = relay always off.
+      <br>If <b>Off</b> is earlier than <b>On</b>, the window runs <b>overnight</b> into the next day
+      — e.g. On 08:00, Off 02:00 means on at 8 AM and off at 2 AM the next morning. The <b>+1 day</b>
+      tick lights up and the selected days are the days the window <i>starts</i>.
     </p>
     <table class="grid relay-grid">
       <thead><tr>
-        <th>Days</th><th>On</th><th>Off</th><th></th>
+        <th>Days</th><th>On</th><th>Off</th><th>+1&nbsp;day</th><th></th>
       </tr></thead>
       <tbody id="relay-rows"></tbody>
     </table>
@@ -138,7 +141,7 @@ $users = $pdo->query('SELECT id, username FROM users ORDER BY username')->fetchA
 </dialog>
 
 <style>
-.relay-dialog       { border:1px solid var(--border); border-radius:8px; padding:1rem 1.25rem; max-width:560px; width:90%; }
+.relay-dialog       { border:1px solid var(--border); border-radius:8px; padding:1rem 1.25rem; max-width:600px; width:90%; }
 .relay-dialog::backdrop { background: rgba(0,0,0,0.35); }
 .relay-grid td      { padding:0.4rem 0.4rem; vertical-align:middle; }
 .relay-grid .dow    { display:flex; gap:0.15rem; flex-wrap:wrap; }
@@ -146,6 +149,9 @@ $users = $pdo->query('SELECT id, username FROM users ORDER BY username')->fetchA
 .relay-grid .dow input { display:none; }
 .relay-grid .dow input:checked + span { background:var(--primary); color:#fff; padding:1px 5px; border-radius:3px; margin:-1px -5px; }
 .relay-grid input[type=time] { width:6.5rem; }
+.relay-grid .overnight { display:inline-flex; align-items:center; gap:0.3rem; font-size:0.76rem; color:var(--muted); white-space:nowrap; }
+.relay-grid .overnight input { margin:0; }
+.relay-grid .overnight.on { color:var(--primary); font-weight:600; }
 </style>
 
 <script>
@@ -237,6 +243,29 @@ function renderRow(win) {
   const offIn = document.createElement('input'); offIn.type='time'; offIn.value = win.off || '18:00';
   tdOff.appendChild(offIn); tr.appendChild(tdOff);
 
+  // Overnight (+1 day) tick. Auto-driven: lights up when Off is earlier than
+  // On, i.e. the window runs past midnight into the next day. Read-only — the
+  // configuration is the On/Off times themselves.
+  const tdNext = document.createElement('td');
+  const ovWrap = document.createElement('label'); ovWrap.className = 'overnight';
+  const ov = document.createElement('input');
+  ov.type = 'checkbox'; ov.disabled = true; ov.tabIndex = -1;
+  ov.title = 'Window runs into the next day (Off earlier than On)';
+  const ovTxt = document.createElement('span'); ovTxt.textContent = 'next day';
+  ovWrap.appendChild(ov); ovWrap.appendChild(ovTxt);
+  tdNext.appendChild(ovWrap); tr.appendChild(tdNext);
+
+  const toMin = v => { const m = /^(\d\d):(\d\d)$/.exec(v || ''); return m ? (+m[1] * 60 + +m[2]) : null; };
+  const refreshOvernight = () => {
+    const a = toMin(onIn.value), b = toMin(offIn.value);
+    const overnight = (a !== null && b !== null && b < a);
+    ov.checked = overnight;
+    ovWrap.classList.toggle('on', overnight);
+  };
+  onIn.addEventListener('input', refreshOvernight);
+  offIn.addEventListener('input', refreshOvernight);
+  refreshOvernight();
+
   const tdRm = document.createElement('td');
   const rm = document.createElement('button'); rm.type='button'; rm.className='danger'; rm.textContent='×';
   rm.addEventListener('click', () => tr.remove());
@@ -249,7 +278,8 @@ function collectWindows() {
   const out = [];
   rowsEl.querySelectorAll('tr').forEach(tr => {
     const days = [];
-    tr.querySelectorAll('input[type=checkbox]').forEach(cb => { if (cb.checked) days.push(+cb.value); });
+    // Scope to the day cell so the overnight indicator checkbox isn't counted.
+    tr.querySelectorAll('.dow input[type=checkbox]').forEach(cb => { if (cb.checked) days.push(+cb.value); });
     const times = tr.querySelectorAll('input[type=time]');
     if (!days.length || !times[0].value || !times[1].value) return;
     out.push({ days, on: times[0].value, off: times[1].value });
