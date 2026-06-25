@@ -25,6 +25,10 @@ GPIO from its local clock, so the relay keeps switching on schedule even
 during a Wi-Fi outage. No windows = relay stays off. See
 [`docs/PINOUT.md`](docs/PINOUT.md) for wiring.
 
+The firmware reports its current relay state on every `ingest.php` POST, so
+the admin devices table shows a **live ON/OFF indicator** per meter (it
+refreshes on the device's sync cadence and marks stale devices).
+
 The **Android app** can also toggle the relay directly over BLE from the
 device detail screen: **On** / **Off** force the relay regardless of the
 schedule, and **Auto** returns it to schedule control. The override lives in

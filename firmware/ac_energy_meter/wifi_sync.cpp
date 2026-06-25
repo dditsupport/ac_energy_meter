@@ -151,6 +151,11 @@ static bool post_batch(uint64_t snapshot_seq, uint64_t &out_acked_seq) {
   doc["current_boot_id"] = storage::boot_id();
   doc["current_boot_uptime_sec"] = (uint32_t)(time_source::monotonic_us() / 1000000ULL);
 
+  // Report current relay state so the server can show a live indicator.
+  doc["relay_on"]      = relay::is_on();
+  doc["relay_mode"]    = relay::mode_str();   // "auto" | "on" | "off"
+  doc["relay_version"] = relay::version();
+
   JsonArray hist = doc.createNestedArray("boot_history");
   storage::BootRecord recs[MAX_BOOT_HISTORY];
   size_t hn = storage::get_boot_history(recs, MAX_BOOT_HISTORY);

@@ -4,16 +4,22 @@ require_once __DIR__ . '/../api/_db.php';
 require_admin();
 $pdo = db();
 
-$devices = $pdo->query(
-    'SELECT d.device_id, d.friendly_name, d.location, d.capacity_kw,
-            d.owner_user_id, u.username AS owner_username, d.first_seen_at,
-            m.fw_version, m.last_sync_at, m.last_seq, m.last_boot_id,
-            m.total_readings, m.log_interval_sec
-       FROM energy_devices d
-       LEFT JOIN users        u ON u.id = d.owner_user_id
-       LEFT JOIN device_meta  m ON m.device_id = d.device_id
-      ORDER BY d.friendly_name'
-)->fetchAll();
+// The relay_* columns arrive with migration 003; fall back gracefully if the
+// DB hasn't been migrated yet so the page still renders.
+$base_cols  = 'd.device_id, d.friendly_name, d.location, d.capacity_kw,
+               d.owner_user_id, u.username AS owner_username, d.first_seen_at,
+               m.fw_version, m.last_sync_at, m.last_seq, m.last_boot_id,
+               m.total_readings, m.log_interval_sec';
+$relay_cols = ', m.relay_on, m.relay_mode, m.relay_reported_at';
+$from       = ' FROM energy_devices d
+                LEFT JOIN users        u ON u.id = d.owner_user_id
+                LEFT JOIN device_meta  m ON m.device_id = d.device_id
+               ORDER BY d.friendly_name';
+try {
+    $devices = $pdo->query("SELECT $base_cols $relay_cols $from")->fetchAll();
+} catch (Throwable $e) {
+    $devices = $pdo->query("SELECT $base_cols $from")->fetchAll();
+}
 
 $users = $pdo->query('SELECT id, username FROM users ORDER BY username')->fetchAll();
 ?>
@@ -39,6 +45,14 @@ $users = $pdo->query('SELECT id, username FROM users ORDER BY username')->fetchA
   table.devices .col-int   button { margin-left: 0.35rem; }
   table.devices .col-meta  { white-space: nowrap; color: var(--muted); font-size: 0.82rem; }
   table.devices .col-rows  { text-align: right; font-variant-numeric: tabular-nums; }
+  table.devices .col-relay { white-space: nowrap; font-size: 0.85rem; }
+  .relay-dot { display: inline-block; width: 0.62rem; height: 0.62rem; border-radius: 50%;
+               margin-right: 0.4rem; vertical-align: middle; background: #c8ccc4; }
+  .relay-dot.on      { background: #1f9d3a; box-shadow: 0 0 0 3px rgba(31,157,58,0.18); }
+  .relay-dot.off     { background: #98a09a; }
+  .relay-dot.stale   { background: #d8a200; }
+  .relay-dot.unknown { background: #c8ccc4; }
+  table.devices .col-relay .relay-label { color: var(--muted); vertical-align: middle; }
   table.devices .actions   { white-space: nowrap; display: flex; gap: 0.5rem; align-items: center; }
   table.devices .actions a { font-size: 0.85rem; }
   /* Visual grouping: zebra stripe + breathing room */
@@ -69,6 +83,7 @@ $users = $pdo->query('SELECT id, username FROM users ORDER BY username')->fetchA
         <th>Last sync</th>
         <th>FW</th>
         <th class="col-rows">Rows</th>
+        <th>Relay</th>
         <th></th>
       </tr></thead>
       <tbody>
@@ -101,6 +116,13 @@ $users = $pdo->query('SELECT id, username FROM users ORDER BY username')->fetchA
           <td class="col-meta"><?= h((string)($d['last_sync_at'] ?? '—')) ?></td>
           <td class="col-meta"><?= h((string)($d['fw_version'] ?? '—')) ?></td>
           <td class="col-rows"><?= number_format((int)($d['total_readings'] ?? 0)) ?></td>
+          <td class="col-relay"
+              data-on="<?= array_key_exists('relay_on', $d) && $d['relay_on'] !== null ? (int)$d['relay_on'] : '' ?>"
+              data-mode="<?= h((string)($d['relay_mode'] ?? '')) ?>"
+              data-at="<?= h((string)($d['relay_reported_at'] ?? '')) ?>"
+              data-int="<?= (int)($d['log_interval_sec'] ?? 900) ?>">
+            <span class="relay-dot unknown"></span><span class="relay-label">—</span>
+          </td>
           <td class="actions">
             <button class="rename">Save</button>
             <button class="relay">Relay</button>
@@ -156,6 +178,8 @@ $users = $pdo->query('SELECT id, username FROM users ORDER BY username')->fetchA
 
 <script>
 const CSRF = <?= json_encode(csrf_token()) ?>;
+// Server timestamps are IST; anchor parsing to that offset for staleness math.
+const APP_TZ_OFFSET = <?= json_encode(app_tz_offset()) ?>;
 
 async function post(action, fields){
   const fd = new FormData();
@@ -311,5 +335,58 @@ document.getElementById('relay-save'  ).addEventListener('click', async () => {
   alert('Saved (version ' + r.version + '). Takes effect on the device\'s next sync.');
   dlg.close();
 });
+
+/* ---------- Live relay-state indicator ----------
+   Each device reports its relay state (relay_on / relay_mode) on every ingest
+   POST; the server stores it on device_meta. We render the last-known state
+   here and refresh it every 20 s so the dot tracks the device's sync cadence. */
+function renderRelayCell(cell, st) {
+  const dot = cell.querySelector('.relay-dot');
+  const lbl = cell.querySelector('.relay-label');
+  const on  = st && st.on;
+  const at  = st && st.at;
+  if (st == null || on == null || !at) {
+    dot.className = 'relay-dot unknown';
+    lbl.textContent = '—';
+    cell.title = 'No state reported yet';
+    return;
+  }
+  const ageSec = (Date.now() - new Date(at.replace(' ', 'T') + APP_TZ_OFFSET).getTime()) / 1000;
+  const stale  = !isFinite(ageSec) || ageSec > Math.max(2.5 * (st.interval || 900), 900);
+  dot.className = 'relay-dot ' + (stale ? 'stale' : (on ? 'on' : 'off'));
+  let text = on ? 'ON' : 'OFF';
+  if (st.mode && st.mode !== 'auto') text += ' · forced ' + st.mode;
+  if (stale) text += ' · stale';
+  lbl.textContent = text;
+  cell.title = 'Reported ' + at + ' IST';
+}
+
+// Initial paint from the server-rendered data-* attributes.
+function stateFromCell(cell) {
+  const onAttr = cell.dataset.on;
+  return {
+    on:       onAttr === '' ? null : onAttr === '1',
+    mode:     cell.dataset.mode || null,
+    at:       cell.dataset.at || null,
+    interval: parseInt(cell.dataset.int || '900', 10),
+  };
+}
+document.querySelectorAll('td.col-relay').forEach(cell => renderRelayCell(cell, stateFromCell(cell)));
+
+async function refreshRelayStates() {
+  let j;
+  try { j = await postRelay('states', {}); } catch (e) { return; }
+  if (!j || !j.ok) return;
+  const byId = {};
+  for (const s of j.states) {
+    byId[s.device_id] = { on: s.relay_on, mode: s.relay_mode, at: s.reported_at, interval: s.interval };
+  }
+  document.querySelectorAll('tr[data-id]').forEach(tr => {
+    const cell = tr.querySelector('td.col-relay');
+    if (cell) renderRelayCell(cell, byId[tr.dataset.id] ?? null);
+  });
+}
+refreshRelayStates();
+setInterval(refreshRelayStates, 20000);
 </script>
 </body></html>

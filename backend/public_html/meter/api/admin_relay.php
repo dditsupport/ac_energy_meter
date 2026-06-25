@@ -20,6 +20,29 @@ check_csrf();
 $pdo    = db();
 $action = (string)($_POST['action'] ?? '');
 $dev    = (string)($_POST['device_id'] ?? '');
+
+// Live relay-state poll for the admin devices table. No device_id needed —
+// returns the last-reported state of every device. Guarded so a DB without
+// migration 003 still responds (with empty states).
+if ($action === 'states') {
+    try {
+        $rows = $pdo->query(
+            'SELECT device_id, relay_on, relay_mode, relay_reported_at, log_interval_sec
+               FROM device_meta'
+        )->fetchAll();
+    } catch (Throwable $e) {
+        $rows = [];
+    }
+    $states = array_map(fn($r) => [
+        'device_id'   => $r['device_id'],
+        'relay_on'    => $r['relay_on'] === null ? null : (bool)(int)$r['relay_on'],
+        'relay_mode'  => $r['relay_mode'],
+        'reported_at' => $r['relay_reported_at'],
+        'interval'    => (int)($r['log_interval_sec'] ?? 900),
+    ], $rows);
+    json_response(200, ['ok' => true, 'states' => $states]);
+}
+
 if ($dev === '') json_response(400, ['ok' => false, 'error' => 'bad_input']);
 
 switch ($action) {

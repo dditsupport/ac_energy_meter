@@ -50,6 +50,10 @@ CREATE TABLE IF NOT EXISTS device_meta (
   last_boot_id     INT UNSIGNED  NOT NULL DEFAULT 0,
   total_readings   BIGINT UNSIGNED NOT NULL DEFAULT 0,
   log_interval_sec INT UNSIGNED  NOT NULL DEFAULT 900,
+  -- Last relay state the device reported on an ingest POST (live indicator).
+  relay_on          TINYINT(1)  NULL,
+  relay_mode        VARCHAR(8)  NULL,   -- 'auto' | 'on' | 'off'
+  relay_reported_at TIMESTAMP   NULL,
   FOREIGN KEY (device_id) REFERENCES energy_devices(device_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

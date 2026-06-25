@@ -57,6 +57,9 @@ backend/
    db user:  <prefix>_acmeterapp     (grant ALL on the db)
    ```
    Then in phpMyAdmin → SQL tab, paste the contents of `schema.sql` and run.
+   For an **existing** database, also run any newer files in `migrations/`
+   (e.g. `003_device_meta_relay_state.sql` adds the live relay-state columns).
+   They're idempotent.
 
 2. **Secrets** — copy `public_html/_config/secrets.php.example` to
    `public_html/_config/secrets.php` and fill in DB creds + token.
@@ -117,7 +120,7 @@ All require a session cookie (`meter_sess`) from POST `/meter/api/login.php`.
 | GET | `/meter/api/readings.php` | session | data points; query params: `device_id`, `from`, `to`, `aggregate=raw\|hourly\|daily\|monthly` |
 | POST | `/meter/api/admin_users.php` | admin | `action=list\|create\|set_password\|set_admin\|delete` (CSRF) |
 | POST | `/meter/api/admin_devices.php` | admin | `action=list\|bind\|rename\|set_interval\|delete` (CSRF) |
-| POST | `/meter/api/admin_relay.php` | admin | `action=get\|set\|clear` per-device relay schedule (CSRF) |
+| POST | `/meter/api/admin_relay.php` | admin | `action=get\|set\|clear` per-device relay schedule, `action=states` live relay state of all devices (CSRF) |
 
 ### Pages
 
@@ -128,7 +131,7 @@ All require a session cookie (`meter_sess`) from POST `/meter/api/login.php`.
 | `/meter/dashboard/report.php` | session | day-vs-day comparison: hourly kWh line per day, Weekly (last 7 days incl. today) or Monthly (pick a month) |
 | `/meter/admin/` | admin | overview + recent ingest activity |
 | `/meter/admin/users.php` | admin | user CRUD |
-| `/meter/admin/devices.php` | admin | device binding, per-device interval override + relay schedule |
+| `/meter/admin/devices.php` | admin | device binding, per-device interval override, relay schedule + live relay state |
 
 ## Aggregations
 

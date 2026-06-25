@@ -43,6 +43,11 @@ $current_up  = (int)   ($body['current_boot_uptime_sec'] ?? 0);
 $boot_hist   =          $body['boot_history']  ?? [];
 $readings    =          $body['readings']      ?? [];
 
+// Device-reported relay state (optional) for the live admin indicator.
+$relay_on    = array_key_exists('relay_on', $body) ? (int)(bool)$body['relay_on'] : null;
+$relay_mode  = (string)($body['relay_mode'] ?? '');
+$relay_mode  = in_array($relay_mode, ['auto', 'on', 'off'], true) ? $relay_mode : null;
+
 if ($device_id === '' || $current_bid <= 0) {
     log_ingest($device_id, 0, 0, 'missing_fields', null);
     json_response(400, ['ok' => false, 'error' => 'missing_fields']);
@@ -74,6 +79,21 @@ $pdo->prepare(
      VALUES (?, ?, NOW())
      ON DUPLICATE KEY UPDATE fw_version = VALUES(fw_version), last_sync_at = NOW()'
 )->execute([$device_id, $fw_version]);
+
+// Best-effort: record the device-reported relay state for the live admin
+// indicator. Guarded so a DB that hasn't run migration 003 (relay_* columns)
+// still ingests readings normally.
+if ($relay_on !== null || $relay_mode !== null) {
+    try {
+        $pdo->prepare(
+            'UPDATE device_meta
+                SET relay_on = ?, relay_mode = ?, relay_reported_at = NOW()
+              WHERE device_id = ?'
+        )->execute([$relay_on, $relay_mode, $device_id]);
+    } catch (Throwable $e) {
+        // relay_* columns not present yet — ignore.
+    }
+}
 
 // ---------- Reconstruct wall times via the boot-chain algorithm ----------
 // boot_start_offset_sec[B] = seconds before sync_wall_time at which boot B began
