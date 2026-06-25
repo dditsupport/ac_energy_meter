@@ -37,7 +37,26 @@ if (PHP_VERSION_ID < 80200) {
     exit("AC Energy Meter: secrets.php not found. Tried: " . implode(', ', $candidates) . "\n");
 })();
 
+// APP_TIMEZONE drives BOTH PHP's default zone and MySQL's session zone, so
+// PHP-written wall-clock values and server-generated NOW()/CURRENT_TIMESTAMP
+// columns agree. Default to IST if an older secrets.php predates this setting.
+if (!defined('APP_TIMEZONE')) {
+    define('APP_TIMEZONE', 'Asia/Kolkata');
+}
 date_default_timezone_set(APP_TIMEZONE);
+
+/**
+ * APP_TIMEZONE as a fixed "+HH:MM" / "-HH:MM" UTC offset. MySQL's session
+ * time zone is set from this numeric offset, which works even on shared hosts
+ * that don't load the named-time-zone tables. (IST = +05:30, and has no DST.)
+ */
+function app_tz_offset(): string {
+    $sec  = (new DateTimeZone(APP_TIMEZONE))
+                ->getOffset(new DateTimeImmutable('now', new DateTimeZone('UTC')));
+    $sign = $sec < 0 ? '-' : '+';
+    $sec  = abs($sec);
+    return sprintf('%s%02d:%02d', $sign, intdiv($sec, 3600), intdiv($sec % 3600, 60));
+}
 
 /* ---------- PDO singleton ---------- */
 function db(): PDO {
@@ -49,6 +68,10 @@ function db(): PDO {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES   => false,
     ]);
+    // Pin the DB session clock to APP_TIMEZONE so NOW()/CURRENT_TIMESTAMP
+    // columns (last_sync_at, ingested_at, received_at, relay updated_at, …)
+    // are stored/read in IST, consistent with the wall_time PHP writes.
+    $pdo->exec("SET time_zone = '" . app_tz_offset() . "'");
     return $pdo;
 }
 

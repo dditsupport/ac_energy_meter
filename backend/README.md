@@ -138,6 +138,24 @@ computes energy generated in the bucket as
 `P_peak`, `V_avg`, `samples`, and `approx` (true if any rows in the
 bucket had `time_confidence='approx'`).
 
+## Time zone (IST)
+
+Everything runs in `APP_TIMEZONE` (default `Asia/Kolkata`, IST/+05:30):
+
+- PHP's default zone is set from it, so device `wall_time` and `server_time`
+  (`date('c')`) are formatted in IST.
+- On every connection, `_db.php` runs `SET time_zone` to the matching numeric
+  offset, so MySQL `NOW()` / `CURRENT_TIMESTAMP` columns (`last_sync_at`,
+  `ingested_at`, `received_at`, relay `updated_at`, …) are IST too — not the
+  shared host's default (often UTC). The numeric offset is used so it works
+  without the named-time-zone tables many hosts omit.
+- Relay schedule times (HH:MM) are interpreted by the firmware in its own
+  `TZ_INFO` (`IST-5:30`), which matches. Keep the two in sync if you change
+  region.
+
+To run in a different zone, change `APP_TIMEZONE` in `secrets.php` **and**
+`TZ_INFO` in `firmware/ac_energy_meter/config.h`.
+
 ## Heartbeat POSTs
 
 Devices POST every ~hour even with no readings, so the server can push

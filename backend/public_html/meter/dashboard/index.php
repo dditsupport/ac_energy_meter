@@ -117,6 +117,9 @@ foreach ($dev_rows as $d) {
 
 <script>
 const DEVICE_ID = <?= json_encode($selected) ?>;
+// Server timestamps are in APP_TIMEZONE (IST). Anchor parsing to that offset
+// so "X ago" is correct regardless of the viewer's browser time zone.
+const APP_TZ_OFFSET = <?= json_encode(app_tz_offset()) ?>;
 
 const RANGES = {
   today: {
@@ -245,14 +248,14 @@ document.querySelectorAll('.range-buttons button').forEach(b => {
 // initial load: today
 document.querySelector('.range-buttons button[data-range="today"]').click();
 
-// "Last sync" relative time. Server timestamp is already in the
-// configured APP_TIMEZONE (Asia/Kolkata), so treat it as local.
+// "Last sync" relative time. Server timestamp is in APP_TIMEZONE (IST);
+// append that offset so the instant is correct in any viewer's browser.
 (function annotateLastSync(){
   const el = document.querySelector('.last-sync .rel');
   if (!el) return;
   const ts = el.dataset.ts;
   if (!ts) return;
-  const d = new Date(ts.replace(' ', 'T'));
+  const d = new Date(ts.replace(' ', 'T') + APP_TZ_OFFSET);
   if (isNaN(d.getTime())) return;
   const tick = () => {
     const secs = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000));
