@@ -2,6 +2,7 @@ package com.dangeedums.acmeter
 
 import android.app.Application
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -24,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -143,11 +145,23 @@ private fun NavGraphBuilder.devicesGraph(
     }
     composable("devices_scan") {
         val scanState by mainVm.scanState.collectAsStateWithLifecycle()
+        val context = LocalContext.current
         ScanScreen(
             state = scanState,
             onStart = mainVm::startScan,
             onStop  = mainVm::stopScan,
-            onAdd   = mainVm::addDevice,
+            onAdd   = { device ->
+                mainVm.addDevice(device)
+                mainVm.stopScan()
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.device_added, device.name),
+                    Toast.LENGTH_SHORT,
+                ).show()
+                // Confirm + return to the saved-devices list, where the newly
+                // added device now appears (it's persisted via the store flow).
+                nav.popBackStack()
+            },
             onBack  = { nav.popBackStack() },
         )
     }

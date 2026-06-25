@@ -7,6 +7,7 @@
     <string name="action_stop">Stop</string>
     <string name="action_add">Add</string>
     <string name="action_remove">Remove</string>
+    <string name="device_added">Added %1$s</string>
     <string name="empty_saved">No devices added yet. Tap the search icon to scan nearby.</string>
     <string name="empty_scan">Scanning… no AC Energy Meter devices found yet. Make sure the ESP32 is powered and nearby.</string>
     <string name="empty_scan_idle">No devices found. Tap Scan to search again.</string>
