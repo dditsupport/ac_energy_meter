@@ -1,0 +1,3 @@
+# Block all web access to this directory. Files live on the filesystem
+# only — PHP requires() them, browsers never reach them.
+Require all denied

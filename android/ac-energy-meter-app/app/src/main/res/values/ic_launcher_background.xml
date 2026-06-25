@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sky-blue background for the adaptive launcher icon — frames the
+         yellow sun + dark solar panel nicely on most Android launchers. -->
+    <color name="ic_launcher_background">#7FB8E6</color>
+</resources>

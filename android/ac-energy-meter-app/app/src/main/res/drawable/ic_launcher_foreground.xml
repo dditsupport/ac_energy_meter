@@ -1,0 +1,62 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Sun rays: 8 short strokes radiating from the centre at (54, 40) -->
+    <group android:pivotX="54" android:pivotY="40">
+        <path android:strokeColor="#FFC83A" android:strokeWidth="3.5" android:strokeLineCap="round"
+              android:pathData="M54,22 L54,30" />
+        <path android:strokeColor="#FFC83A" android:strokeWidth="3.5" android:strokeLineCap="round"
+              android:pathData="M40.7,26.5 L44.7,33.5" />
+        <path android:strokeColor="#FFC83A" android:strokeWidth="3.5" android:strokeLineCap="round"
+              android:pathData="M30.9,36.4 L37.9,40.4" />
+        <path android:strokeColor="#FFC83A" android:strokeWidth="3.5" android:strokeLineCap="round"
+              android:pathData="M77.1,36.4 L70.1,40.4" />
+        <path android:strokeColor="#FFC83A" android:strokeWidth="3.5" android:strokeLineCap="round"
+              android:pathData="M67.3,26.5 L63.3,33.5" />
+        <path android:strokeColor="#FFC83A" android:strokeWidth="3.5" android:strokeLineCap="round"
+              android:pathData="M30.9,53.6 L37.9,49.6" />
+        <path android:strokeColor="#FFC83A" android:strokeWidth="3.5" android:strokeLineCap="round"
+              android:pathData="M77.1,53.6 L70.1,49.6" />
+        <path android:strokeColor="#FFC83A" android:strokeWidth="3.5" android:strokeLineCap="round"
+              android:pathData="M54,58 L54,50" />
+    </group>
+
+    <!-- Sun body -->
+    <path
+        android:fillColor="#FFD93D"
+        android:pathData="M54,40 m-11,0 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0" />
+
+    <!-- Solar panel (perspective tilt: trapezoid representing rooftop array). -->
+    <!-- Dark frame -->
+    <path
+        android:fillColor="#1B3D5A"
+        android:pathData="M25,68 L83,68 L91,86 L17,86 Z" />
+    <!-- Inner cells -->
+    <path
+        android:fillColor="#2E6BAA"
+        android:pathData="M28,70 L52,70 L52,84 L21,84 Z" />
+    <path
+        android:fillColor="#2E6BAA"
+        android:pathData="M56,70 L80,70 L87,84 L56,84 Z" />
+    <!-- Cell dividers -->
+    <path
+        android:strokeColor="#1B3D5A"
+        android:strokeWidth="1.5"
+        android:pathData="M40,70 L36,84" />
+    <path
+        android:strokeColor="#1B3D5A"
+        android:strokeWidth="1.5"
+        android:pathData="M68,70 L71,84" />
+    <!-- Horizontal mid-line on each panel half -->
+    <path
+        android:strokeColor="#1B3D5A"
+        android:strokeWidth="1.5"
+        android:pathData="M24.5,77 L52,77" />
+    <path
+        android:strokeColor="#1B3D5A"
+        android:strokeWidth="1.5"
+        android:pathData="M56,77 L83.5,77" />
+</vector>

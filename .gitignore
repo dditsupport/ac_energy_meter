@@ -1,0 +1,25 @@
+# Arduino IDE build artifacts
+build/
+*.bin
+*.elf
+*.map
+*.hex
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor cruft
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Backend: real secrets never leave the host
+backend/public_html/_config/secrets.php
