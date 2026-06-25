@@ -25,6 +25,11 @@ GPIO from its local clock, so the relay keeps switching on schedule even
 during a Wi-Fi outage. No windows = relay stays off. See
 [`docs/PINOUT.md`](docs/PINOUT.md) for wiring.
 
+The **Android app** can also toggle the relay directly over BLE from the
+device detail screen: **On** / **Off** force the relay regardless of the
+schedule, and **Auto** returns it to schedule control. The override lives in
+RAM, so a power-cycle returns the meter to its server schedule.
+
 ## Repository layout
 
 ```

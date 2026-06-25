@@ -79,6 +79,8 @@ provisioning via three characteristics:
 | Watch progress | Wi-Fi Status (read or notify) | `28c3fa43-a1b5-4e0e-a51c-a1e979609d28` | JSON `{"status":"...","ssid":"..."}` |
 | Update backend host | Server Config (write) | `9478f8ff-cb2f-4447-8a2f-49791de6bc09` | `{"host":"https://aromen.biz"}` (path stays hardcoded in firmware) |
 | Read current host | Device Info (read) | `56c4fe7d-1c7d-4042-9547-6170ec5c243c` | `ingest_host` and `ingest_path` fields in the JSON |
+| Toggle the relay | Relay (write) | `8c5a2e91-6f3d-4b27-9a1c-0e7d3f8b6a52` | `{"mode":"on"}` / `{"mode":"off"}` (force) or `{"mode":"auto"}` (follow schedule) |
+| Read relay state | Relay (read or notify) | `8c5a2e91-6f3d-4b27-9a1c-0e7d3f8b6a52` | JSON `{"mode":"auto","on":false,"sched_version":3}` |
 
 Recommended flow with nRF Connect:
 

@@ -96,6 +96,9 @@ fun DeviceDetailScreen(
             InfoCard(info, ui.wifi)
 
             Spacer(Modifier.height(12.dp))
+            RelayCard(relay = ui.relay, onMode = { vm.setRelayMode(it) })
+
+            Spacer(Modifier.height(12.dp))
             ActionsCard(
                 unsyncedCount     = info.unsyncedCount,
                 onSync            = { vm.syncNow() },
@@ -212,6 +215,56 @@ private fun ActionsCard(
             }
         }
     }
+}
+
+@Composable
+private fun RelayCard(
+    relay: com.dangeedums.acmeter.ble.RelayState?,
+    onMode: (String) -> Unit,
+) {
+    val mode = relay?.mode ?: "auto"
+    val on   = relay?.on ?: false
+    Card(elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Relay", style = MaterialTheme.typography.titleMedium)
+            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                Text("State", modifier = Modifier.weight(0.4f),
+                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    if (on) "ON" else "OFF",
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(0.6f),
+                    color = if (on) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Text(
+                when (mode) {
+                    "on"  -> "Manual override: forced ON (ignores schedule)."
+                    "off" -> "Manual override: forced OFF (ignores schedule)."
+                    else  -> "Auto: following the server schedule."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                RelayModeButton("On",   active = mode == "on",   modifier = Modifier.weight(1f)) { onMode("on") }
+                RelayModeButton("Off",  active = mode == "off",  modifier = Modifier.weight(1f)) { onMode("off") }
+                RelayModeButton("Auto", active = mode == "auto", modifier = Modifier.weight(1f)) { onMode("auto") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RelayModeButton(
+    label: String,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    if (active) Button(onClick = onClick, modifier = modifier) { Text(label) }
+    else        OutlinedButton(onClick = onClick, modifier = modifier) { Text(label) }
 }
 
 @Composable

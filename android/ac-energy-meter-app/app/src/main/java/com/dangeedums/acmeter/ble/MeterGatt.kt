@@ -20,6 +20,7 @@ private val WIFI_CONFIG_CHAR    = characteristicOf(SERVICE, BleUuids.WIFI_CONFIG
 private val WIFI_STATUS_CHAR    = characteristicOf(SERVICE, BleUuids.WIFI_STATUS.toString())
 private val WIFI_SCAN_CHAR      = characteristicOf(SERVICE, BleUuids.WIFI_SCAN.toString())
 private val SERVER_CONFIG_CHAR  = characteristicOf(SERVICE, BleUuids.SERVER_CONFIG.toString())
+private val RELAY_CHAR          = characteristicOf(SERVICE, BleUuids.RELAY.toString())
 
 /**
  * Higher-level operations on a AC Energy Meter peripheral. One instance per
@@ -80,6 +81,23 @@ class MeterGatt(
         if (text.isBlank()) null
         else json.decodeFromString(WifiStatus.serializer(), text)
     }.getOrNull()
+
+    /** Current relay state, or null if the char is empty / unparseable. */
+    suspend fun readRelay(): RelayState? = runCatching {
+        val text = peripheral.read(RELAY_CHAR).decodeToString()
+        if (text.isBlank()) null
+        else json.decodeFromString(RelayState.serializer(), text)
+    }.getOrNull()
+
+    /** Live relay-state pushes (schedule- or override-driven) from the device. */
+    fun observeRelay(): Flow<RelayState> = peripheral.observe(RELAY_CHAR).map {
+        json.decodeFromString(RelayState.serializer(), it.decodeToString())
+    }
+
+    /** Manual relay control. mode = "on" | "off" | "auto" (follow schedule). */
+    suspend fun writeRelayMode(mode: String) {
+        peripheral.write(RELAY_CHAR, """{"mode":"$mode"}""".toByteArray(), WriteType.WithResponse)
+    }
 
     /** Live Wi-Fi status pushes from the device. */
     fun observeWifiStatus(): Flow<WifiStatus> = peripheral.observe(WIFI_STATUS_CHAR).map {

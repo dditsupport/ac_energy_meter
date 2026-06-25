@@ -6,6 +6,7 @@
 #include "time_source.h"
 #include "wifi_sync.h"
 #include "rtc.h"
+#include "relay.h"
 
 #include <NimBLEDevice.h>
 #include <ArduinoJson.h>
@@ -29,6 +30,8 @@ static inline std::string to_std(const String &s) {
 //     Sync ACK        WRITE      uint64 seq (decimal string) the app forwarded ok
 //     Wi-Fi Config    WRITE      JSON {ssid, password}
 //     Wi-Fi Status    READ       JSON {ssid, status, ip}
+//     Relay           READ/WRITE/NOTIFY  JSON {mode, on, sched_version};
+//                     write {"mode":"on|off|auto"} for manual override
 // -----------------------------------------------------------------------------
 //
 // -----------------------------------------------------------------------------
@@ -53,6 +56,8 @@ static NimBLECharacteristic *s_char_wifi_cfg = nullptr;
 static NimBLECharacteristic *s_char_wifi_status = nullptr;
 static NimBLECharacteristic *s_char_wifi_scan = nullptr;
 static NimBLECharacteristic *s_char_server_cfg = nullptr;
+static NimBLECharacteristic *s_char_relay = nullptr;
+static String s_last_relay_json = "";
 static uint32_t s_last_pushed_scan_version = 0;
 static WifiStatus s_last_pushed_wifi_status = WIFI_IDLE;
 
@@ -227,6 +232,33 @@ class ServerCfgCallbacks : public NimBLECharacteristicCallbacks {
   }
 };
 
+// Relay: write {"mode":"on"|"off"|"auto"} to manually drive the relay GPIO.
+//   on   -> hold energised, off -> hold de-energised, auto -> follow schedule.
+// The new state is reflected back on this characteristic (READ + NOTIFY).
+class RelayCallbacks : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) override {
+    (void)info;
+    std::string v = c->getValue();
+    StaticJsonDocument<96> doc;
+    if (deserializeJson(doc, v)) {
+      LOG_PRINTF("[ble] relay bad json: %s\n", v.c_str());
+      return;
+    }
+    String m = (const char *)(doc["mode"] | "");
+    m.toLowerCase();
+    if      (m == "on")   relay::set_mode(relay::Mode::FORCE_ON);
+    else if (m == "off")  relay::set_mode(relay::Mode::FORCE_OFF);
+    else if (m == "auto") relay::set_mode(relay::Mode::AUTO);
+    else { LOG_PRINTF("[ble] relay unknown mode: %s\n", m.c_str()); return; }
+
+    // Reflect the resulting state immediately.
+    s_last_relay_json = relay::status_json();
+    c->setValue(to_std(s_last_relay_json));
+    c->notify();
+    LOG_PRINTF("[ble] relay set to %s (on=%d)\n", relay::mode_str(), relay::is_on());
+  }
+};
+
 class WifiCfgCallbacks : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) override {
     (void)info;
@@ -387,6 +419,13 @@ void begin() {
       BLE_UUID_SERVER_CONFIG, NIMBLE_PROPERTY::WRITE);
   s_char_server_cfg->setCallbacks(new ServerCfgCallbacks());
 
+  s_char_relay = svc->createCharacteristic(
+      BLE_UUID_RELAY,
+      NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY);
+  s_last_relay_json = relay::status_json();
+  s_char_relay->setValue(to_std(s_last_relay_json));
+  s_char_relay->setCallbacks(new RelayCallbacks());
+
   svc->start();
 
   NimBLEAdvertising *adv = NimBLEDevice::getAdvertising();
@@ -440,6 +479,17 @@ void tick() {
         s_char_wifi_status->setValue(to_std(out));
         s_char_wifi_status->notify();
       }
+    }
+  }
+
+  // Mirror live relay state (schedule- or override-driven) and notify on
+  // change so the app's toggle stays in sync without polling.
+  if (s_char_relay) {
+    String rj = relay::status_json();
+    if (rj != s_last_relay_json) {
+      s_last_relay_json = rj;
+      s_char_relay->setValue(to_std(rj));
+      s_char_relay->notify();
     }
   }
 

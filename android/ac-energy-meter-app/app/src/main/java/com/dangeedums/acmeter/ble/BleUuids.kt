@@ -19,4 +19,5 @@ object BleUuids {
     val WIFI_STATUS     : UUID = UUID.fromString("28c3fa43-a1b5-4e0e-a51c-a1e979609d28")
     val WIFI_SCAN       : UUID = UUID.fromString("d4346c1c-6e36-4a0f-a164-84cd396a4697")
     val SERVER_CONFIG   : UUID = UUID.fromString("9478f8ff-cb2f-4447-8a2f-49791de6bc09")
+    val RELAY           : UUID = UUID.fromString("8c5a2e91-6f3d-4b27-9a1c-0e7d3f8b6a52")
 }

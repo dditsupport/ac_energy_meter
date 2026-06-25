@@ -14,6 +14,7 @@ static String   s_schedule_json = "[]";
 static uint32_t s_version       = 0;
 static bool     s_state         = false;
 static bool     s_initialised   = false;
+static Mode     s_mode          = Mode::AUTO;  // RAM-only manual override
 
 static inline void write_pin(bool on) {
 #if RELAY_ACTIVE_HIGH
@@ -58,6 +59,33 @@ void apply(uint32_t version, const String &schedule_json_array) {
 
 uint32_t version() { return s_version; }
 bool     is_on()   { return s_state; }
+Mode     mode()    { return s_mode; }
+
+const char *mode_str() {
+  switch (s_mode) {
+    case Mode::FORCE_ON:  return "on";
+    case Mode::FORCE_OFF: return "off";
+    default:              return "auto";
+  }
+}
+
+void set_mode(Mode m) {
+  if (m == s_mode) return;
+  s_mode = m;
+  LOG_PRINTF("[relay] mode -> %s\n", mode_str());
+  // Apply immediately so the toggle is felt without waiting for the next tick.
+  tick();
+}
+
+String status_json() {
+  StaticJsonDocument<96> doc;
+  doc["mode"]          = mode_str();
+  doc["on"]            = s_state;
+  doc["sched_version"] = s_version;
+  String out;
+  serializeJson(doc, out);
+  return out;
+}
 
 // Parse "HH:MM" into minutes-of-day (0..1439). Returns -1 on malformed.
 static int parse_hm(const char *s) {
@@ -100,6 +128,17 @@ static bool desired_state(int dow, int minute) {
 
 void tick() {
   if (!s_initialised) return;
+
+  // Manual override from the app takes precedence over the schedule and
+  // needs no wall clock.
+  if (s_mode == Mode::FORCE_ON || s_mode == Mode::FORCE_OFF) {
+    bool want = (s_mode == Mode::FORCE_ON);
+    if (want != s_state) {
+      write_pin(want);
+      LOG_PRINTF("[relay] %s (manual override)\n", want ? "ON" : "OFF");
+    }
+    return;
+  }
 
   time_t now = time(nullptr);
   if (now < 1700000000) {

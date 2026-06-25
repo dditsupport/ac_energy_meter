@@ -1,0 +1,33 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Themed-icon silhouette: dial ring + ticks + power bolt. The launcher
+         tints this by alpha, so there is no filled face (which would render
+         as a flat disc). -->
+
+    <!-- Dial ring -->
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="4"
+        android:pathData="M54,54 m-30,0 a30,30 0 1,0 60,0 a30,30 0 1,0 -60,0" />
+
+    <!-- Tick marks -->
+    <group>
+        <path android:strokeColor="#000000" android:strokeWidth="3" android:strokeLineCap="round"
+              android:pathData="M54,25 L54,30" />
+        <path android:strokeColor="#000000" android:strokeWidth="3" android:strokeLineCap="round"
+              android:pathData="M83,54 L78,54" />
+        <path android:strokeColor="#000000" android:strokeWidth="3" android:strokeLineCap="round"
+              android:pathData="M54,83 L54,78" />
+        <path android:strokeColor="#000000" android:strokeWidth="3" android:strokeLineCap="round"
+              android:pathData="M25,54 L30,54" />
+    </group>
+
+    <!-- Power bolt -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M58,36 L43,57 L52,57 L48,72 L65,49 L56,49 Z" />
+</vector>

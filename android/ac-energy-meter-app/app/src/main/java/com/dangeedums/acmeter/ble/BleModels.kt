@@ -39,6 +39,17 @@ data class WifiScanResult(
     val isEncrypted: Boolean get() = encrypted != 0
 }
 
+/**
+ * Relay characteristic shape: {"mode":"auto","on":false,"sched_version":3}.
+ * `mode` is "auto" | "on" | "off". Keep in sync with relay::status_json().
+ */
+@Serializable
+data class RelayState(
+    val mode: String = "auto",
+    val on: Boolean = false,
+    @SerialName("sched_version") val schedVersion: Int = 0,
+)
+
 /** Wi-Fi Status characteristic shape: {"status":"connected","ssid":"..."} */
 @Serializable
 data class WifiStatus(

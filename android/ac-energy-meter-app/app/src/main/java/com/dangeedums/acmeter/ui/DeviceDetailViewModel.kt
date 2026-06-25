@@ -37,6 +37,7 @@ data class DeviceDetailUi(
     val connState: ConnState = ConnState.Idle,
     val info: DeviceInfoBle? = null,
     val wifi: com.dangeedums.acmeter.ble.WifiStatus? = null,
+    val relay: com.dangeedums.acmeter.ble.RelayState? = null,
     val error: String? = null,
     val syncStage: SyncStage = SyncStage.Idle,
     val syncRows: Int = 0,
@@ -79,6 +80,14 @@ class DeviceDetailViewModel(
                     .onEach { _ui.value = _ui.value.copy(wifi = it) }
                     .catch { /* connection ended; ignore */ }
                     .launchIn(viewModelScope)
+                // Relay state: initial read + live pushes for the toggle UI.
+                runCatching { gatt.readRelay() }.getOrNull()?.let {
+                    _ui.value = _ui.value.copy(relay = it)
+                }
+                gatt.observeRelay()
+                    .onEach { _ui.value = _ui.value.copy(relay = it) }
+                    .catch { /* connection ended; ignore */ }
+                    .launchIn(viewModelScope)
             } catch (t: Throwable) {
                 _ui.value = _ui.value.copy(connState = ConnState.Failed, error = t.message ?: "connect failed")
             }
@@ -94,6 +103,20 @@ class DeviceDetailViewModel(
 
     fun refreshInfo() {
         viewModelScope.launch { readInfoNow() }
+    }
+
+    /** Manual relay control over BLE. mode = "on" | "off" | "auto". */
+    fun setRelayMode(mode: String) {
+        viewModelScope.launch {
+            runCatching { gatt.writeRelayMode(mode) }
+                .onFailure { _ui.value = _ui.value.copy(error = "relay: ${it.message}") }
+            // The firmware notifies on change, but read back too in case the
+            // notification was missed (e.g. mode unchanged).
+            kotlinx.coroutines.delay(250)
+            runCatching { gatt.readRelay() }.getOrNull()?.let {
+                _ui.value = _ui.value.copy(relay = it)
+            }
+        }
     }
 
     /** Suspending device-info read so callers can await it (e.g. after a sync). */
