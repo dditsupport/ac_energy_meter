@@ -34,10 +34,11 @@
 // include {"log_interval_sec": N}, and the firmware will use N until told
 // otherwise.
 //
-// PRODUCTION default: 900 (15 minutes), per spec §3.7.
-// TEST default: 60 (1 minute) for bench iteration.
+// Deployed default: 300 (5 minutes) — matches the per-device interval set
+// from the server. The server can still override it at runtime via the
+// ingest.php response ({"log_interval_sec": N}).
 // Sanity bounds enforced in storage::set_log_interval_sec(): 60..86400.
-#define LOG_INTERVAL_SEC_DEFAULT 60       // TODO: restore 900 for production
+#define LOG_INTERVAL_SEC_DEFAULT 300
 #define LOG_INTERVAL_SEC_MIN     60
 #define LOG_INTERVAL_SEC_MAX     86400
 #define DISPLAY_REFRESH_MS       1000     // 1 Hz OLED refresh & PZEM sample
