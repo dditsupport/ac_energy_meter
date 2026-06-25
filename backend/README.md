@@ -118,6 +118,7 @@ All require a session cookie (`meter_sess`) from POST `/meter/api/login.php`.
 | GET/POST | `/meter/api/logout.php` | any | clear session |
 | GET | `/meter/api/devices.php` | session | list devices user can see |
 | GET | `/meter/api/readings.php` | session | data points; query params: `device_id`, `from`, `to`, `aggregate=raw\|hourly\|daily\|monthly` |
+| GET | `/meter/api/relay_state.php` | session | last-reported relay state of a device: `device_id` → `{on, mode, reported_at, interval}` |
 | POST | `/meter/api/admin_users.php` | admin | `action=list\|create\|set_password\|set_admin\|delete` (CSRF) |
 | POST | `/meter/api/admin_devices.php` | admin | `action=list\|bind\|rename\|set_interval\|delete` (CSRF) |
 | POST | `/meter/api/admin_relay.php` | admin | `action=get\|set\|clear` per-device relay schedule, `action=states` live relay state of all devices (CSRF) |
@@ -127,7 +128,7 @@ All require a session cookie (`meter_sess`) from POST `/meter/api/login.php`.
 | URL | Auth | Purpose |
 |---|---|---|
 | `/meter/dashboard/login.php` | none | sign-in form |
-| `/meter/dashboard/` | session | charts: Today / 24 h / 7 d / 30 d / 12 mo |
+| `/meter/dashboard/` | session | charts: Today / 24 h / 7 d / 30 d / 12 mo + live relay state |
 | `/meter/dashboard/report.php` | session | day-vs-day comparison: hourly kWh line per day, Weekly (last 7 days incl. today) or Monthly (pick a month) |
 | `/meter/admin/` | admin | overview + recent ingest activity |
 | `/meter/admin/users.php` | admin | user CRUD |

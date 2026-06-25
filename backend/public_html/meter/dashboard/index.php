@@ -30,6 +30,22 @@ $selected_meta = null;
 foreach ($dev_rows as $d) {
     if ($d['device_id'] === $selected) { $selected_meta = $d; break; }
 }
+
+// Last-reported relay state for the selected device (live indicator). Guarded
+// so a DB without migration 003 (relay_* columns) still renders the dashboard.
+$relay_meta = null;
+if ($selected !== '') {
+    try {
+        $rs = $pdo->prepare(
+            'SELECT relay_on, relay_mode, relay_reported_at, log_interval_sec
+               FROM device_meta WHERE device_id = ?'
+        );
+        $rs->execute([$selected]);
+        $relay_meta = $rs->fetch() ?: null;
+    } catch (Throwable $e) {
+        $relay_meta = null;
+    }
+}
 ?>
 <!doctype html>
 <html lang="en"><head>
@@ -39,6 +55,16 @@ foreach ($dev_rows as $d) {
 <link rel="stylesheet" href="/meter/dashboard/assets/style.css?v=7">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+  .relay-state { display: inline-flex; align-items: baseline; gap: 0.3rem; font-size: 0.8rem; color: var(--muted); }
+  .relay-dot { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%;
+               background: #c8ccc4; align-self: center; }
+  .relay-dot.on      { background: #1f9d3a; box-shadow: 0 0 0 3px rgba(31,157,58,0.18); }
+  .relay-dot.off     { background: #98a09a; }
+  .relay-dot.stale   { background: #d8a200; }
+  .relay-dot.unknown { background: #c8ccc4; }
+  .relay-state .relay-label { color: var(--text); }
+</style>
 </head><body>
 
 <header class="topbar">
@@ -94,6 +120,13 @@ foreach ($dev_rows as $d) {
         <?php else: ?>
           <b>never</b>
         <?php endif; ?>
+      </span>
+      <span class="relay-state"
+            data-on="<?= ($relay_meta && $relay_meta['relay_on'] !== null) ? (int)$relay_meta['relay_on'] : '' ?>"
+            data-mode="<?= h((string)($relay_meta['relay_mode'] ?? '')) ?>"
+            data-at="<?= h((string)($relay_meta['relay_reported_at'] ?? '')) ?>"
+            data-int="<?= (int)($relay_meta['log_interval_sec'] ?? 900) ?>">
+        Relay: <span class="relay-dot unknown"></span><span class="relay-label">—</span>
       </span>
     <?php endif; ?>
   </form>
@@ -269,6 +302,50 @@ document.querySelector('.range-buttons button[data-range="today"]').click();
   };
   tick();
   setInterval(tick, 30_000);
+})();
+
+// Live relay indicator. The device reports its relay state on every ingest
+// POST; we render the last-known state and refresh on the sync cadence.
+(function relayIndicator(){
+  const el = document.querySelector('.relay-state');
+  if (!el) return;
+  const dot = el.querySelector('.relay-dot');
+  const lbl = el.querySelector('.relay-label');
+
+  function render(st){
+    const on = st && st.on, at = st && st.at;
+    if (st == null || on == null || !at){
+      dot.className = 'relay-dot unknown'; lbl.textContent = '—';
+      el.title = 'No state reported yet'; return;
+    }
+    const ageSec = (Date.now() - new Date(at.replace(' ', 'T') + APP_TZ_OFFSET).getTime()) / 1000;
+    const stale  = !isFinite(ageSec) || ageSec > Math.max(2.5 * (st.interval || 900), 900);
+    dot.className = 'relay-dot ' + (stale ? 'stale' : (on ? 'on' : 'off'));
+    let text = on ? 'ON' : 'OFF';
+    if (st.mode && st.mode !== 'auto') text += ' · forced ' + st.mode;
+    if (stale) text += ' · stale';
+    lbl.textContent = text;
+    el.title = 'Reported ' + at + ' IST';
+  }
+
+  // Initial paint from the server-rendered data-* attributes.
+  render({
+    on:       el.dataset.on === '' ? null : el.dataset.on === '1',
+    mode:     el.dataset.mode || null,
+    at:       el.dataset.at || null,
+    interval: parseInt(el.dataset.int || '900', 10),
+  });
+
+  async function refresh(){
+    try {
+      const r = await (await fetch(
+        `/meter/api/relay_state.php?device_id=${encodeURIComponent(DEVICE_ID)}`,
+        { credentials: 'same-origin' })).json();
+      if (r && r.ok) render({ on: r.on, mode: r.mode, at: r.reported_at, interval: r.interval });
+    } catch (e) { /* keep last paint */ }
+  }
+  refresh();
+  setInterval(refresh, 20_000);
 })();
 </script>
 <?php endif; ?>
