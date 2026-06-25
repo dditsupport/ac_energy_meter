@@ -45,6 +45,7 @@ foreach ($dev_rows as $d) {
   <div class="brand">AC Energy Meter</div>
   <div class="user">
     Signed in as <b><?= h($user['username']) ?></b>
+    &middot; <a href="/meter/dashboard/report.php">reports</a>
     <?php if (!empty($user['is_admin'])): ?>
       &middot; <a href="/meter/admin/">admin</a>
     <?php endif; ?>

@@ -125,6 +125,7 @@ All require a session cookie (`meter_sess`) from POST `/meter/api/login.php`.
 |---|---|---|
 | `/meter/dashboard/login.php` | none | sign-in form |
 | `/meter/dashboard/` | session | charts: Today / 24 h / 7 d / 30 d / 12 mo |
+| `/meter/dashboard/report.php` | session | day-vs-day comparison: hourly kWh line per day, Weekly (last 7 days incl. today) or Monthly (pick a month) |
 | `/meter/admin/` | admin | overview + recent ingest activity |
 | `/meter/admin/users.php` | admin | user CRUD |
 | `/meter/admin/devices.php` | admin | device binding, per-device interval override + relay schedule |
