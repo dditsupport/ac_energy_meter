@@ -4,6 +4,7 @@
 //   action=bind           -> assign owner_user_id to a device (or null to unbind)
 //   action=rename         -> set friendly_name / location / capacity_kw / notes
 //   action=set_interval   -> override device_meta.log_interval_sec (0 = use default)
+//   action=regen_pin      -> generate a new BLE access PIN, returns it
 //   action=delete         -> delete device + all its readings (cascades)
 
 declare(strict_types=1);
@@ -74,6 +75,17 @@ case 'set_interval':
          ON DUPLICATE KEY UPDATE log_interval_sec = VALUES(log_interval_sec)'
     )->execute([$device_id, $sec ?: 900]);
     json_response(200, ['ok' => true]);
+
+case 'regen_pin':
+    $device_id = (string)($_POST['device_id'] ?? '');
+    if ($device_id === '') json_response(400, ['ok' => false, 'error' => 'bad_input']);
+    $exists = $pdo->prepare('SELECT 1 FROM energy_devices WHERE device_id = ?');
+    $exists->execute([$device_id]);
+    if (!$exists->fetchColumn()) json_response(404, ['ok' => false, 'error' => 'no_such_device']);
+    $pin = gen_ble_pin();
+    $pdo->prepare('UPDATE energy_devices SET ble_pin = ? WHERE device_id = ?')
+        ->execute([$pin, $device_id]);
+    json_response(200, ['ok' => true, 'ble_pin' => $pin]);
 
 case 'delete':
     $device_id = (string)($_POST['device_id'] ?? '');

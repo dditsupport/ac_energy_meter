@@ -10,6 +10,8 @@ import com.dangeedums.acmeter.AcMeterApp
 import com.dangeedums.acmeter.cloud.CloudClient
 import com.dangeedums.acmeter.cloud.CloudDevice
 import com.dangeedums.acmeter.cloud.ReadingPoint
+import com.dangeedums.acmeter.data.BlePinStore
+import com.dangeedums.acmeter.data.BleUnlockRegistry
 import com.dangeedums.acmeter.data.CloudSessionStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,10 +46,23 @@ class CloudViewModel(
     application: Application,
     private val client: CloudClient,
     private val session: CloudSessionStore,
+    private val blePinStore: BlePinStore,
+    private val unlockRegistry: BleUnlockRegistry,
 ) : AndroidViewModel(application) {
 
     private val _ui = MutableStateFlow(CloudUi())
     val ui: StateFlow<CloudUi> = _ui.asStateFlow()
+
+    /** Cache the authorised BLE PINs locally so the BLE access gate can
+     *  validate entered PINs offline. Called whenever we fetch the device list
+     *  while logged in. */
+    private suspend fun cachePins(devices: List<CloudDevice>) {
+        val pins = devices.mapNotNull { d ->
+            d.ble_pin?.takeIf { it.isNotBlank() }?.let { d.device_id.lowercase() to it }
+        }.toMap()
+        blePinStore.setAll(pins)
+        session.setLoggedIn(true)
+    }
 
     init {
         viewModelScope.launch {
@@ -66,6 +81,7 @@ class CloudViewModel(
                 if (resp.ok) {
                     // Session is alive but CSRF was wiped at process restart — refresh it.
                     client.refreshCsrf()
+                    cachePins(resp.devices)
                     _ui.value = _ui.value.copy(
                         loggedIn = true,
                         devices = resp.devices,
@@ -102,6 +118,10 @@ class CloudViewModel(
     fun logout() {
         viewModelScope.launch {
             runCatching { client.logout() }
+            // Drop cached BLE PINs + unlocks so registered devices re-lock.
+            runCatching { blePinStore.clear() }
+            unlockRegistry.clear()
+            session.setLoggedIn(false)
             _ui.value = CloudUi(baseUrl = _ui.value.baseUrl)
         }
     }
@@ -111,6 +131,7 @@ class CloudViewModel(
         viewModelScope.launch {
             runCatching { client.devices() }
                 .onSuccess { resp ->
+                    cachePins(resp.devices)
                     val selected = _ui.value.selectedDeviceId
                         ?: resp.devices.firstOrNull()?.device_id
                     _ui.value = _ui.value.copy(
@@ -163,7 +184,10 @@ class CloudViewModel(
         fun factory(application: Application): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = application as AcMeterApp
-                CloudViewModel(application, app.cloudClient, app.cloudSessionStore)
+                CloudViewModel(
+                    application, app.cloudClient, app.cloudSessionStore,
+                    app.blePinStore, app.bleUnlockRegistry,
+                )
             }
         }
     }

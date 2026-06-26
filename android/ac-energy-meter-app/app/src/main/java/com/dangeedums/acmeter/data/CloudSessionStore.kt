@@ -2,9 +2,11 @@ package com.dangeedums.acmeter.data
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /**
@@ -16,6 +18,7 @@ class CloudSessionStore(private val store: DataStore<Preferences>) {
     private val keyBaseUrl   = stringPreferencesKey("cloud_base_url")
     private val keyUsername  = stringPreferencesKey("cloud_username")
     private val keyToken     = stringPreferencesKey("device_token")
+    private val keyLoggedIn  = booleanPreferencesKey("cloud_logged_in")
 
     data class Settings(
         val baseUrl: String,
@@ -41,5 +44,13 @@ class CloudSessionStore(private val store: DataStore<Preferences>) {
             if (username    != null) prefs[keyUsername] = username
             if (deviceToken != null) prefs[keyToken]    = deviceToken
         }
+    }
+
+    /** Whether a cloud session is currently considered active. Used by the BLE
+     *  access gate to distinguish "log in first" from "not your device". */
+    suspend fun isLoggedIn(): Boolean = store.data.first()[keyLoggedIn] ?: false
+
+    suspend fun setLoggedIn(value: Boolean) {
+        store.edit { it[keyLoggedIn] = value }
     }
 }

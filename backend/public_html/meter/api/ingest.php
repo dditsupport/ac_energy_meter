@@ -70,9 +70,18 @@ if (!$device_token_ok && $session_user) {
 }
 
 // Auto-register the device. owner_user_id stays NULL until an admin binds it.
-$pdo->prepare(
-    'INSERT IGNORE INTO energy_devices (device_id, friendly_name) VALUES (?, ?)'
-)->execute([$device_id, $device_id]);
+// New rows get a random BLE access PIN; INSERT IGNORE leaves an existing
+// device's PIN untouched. Guarded so a DB without the ble_pin column (pre
+// migration 004) still ingests.
+try {
+    $pdo->prepare(
+        'INSERT IGNORE INTO energy_devices (device_id, friendly_name, ble_pin) VALUES (?, ?, ?)'
+    )->execute([$device_id, $device_id, gen_ble_pin()]);
+} catch (Throwable $e) {
+    $pdo->prepare(
+        'INSERT IGNORE INTO energy_devices (device_id, friendly_name) VALUES (?, ?)'
+    )->execute([$device_id, $device_id]);
+}
 
 $pdo->prepare(
     'INSERT INTO device_meta (device_id, fw_version, last_sync_at)

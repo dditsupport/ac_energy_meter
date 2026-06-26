@@ -58,6 +58,11 @@ function app_tz_offset(): string {
     return sprintf('%s%02d:%02d', $sign, intdiv($sec, 3600), intdiv($sec % 3600, 60));
 }
 
+/** Generate a random 6-digit BLE access PIN (zero-padded), e.g. "048213". */
+function gen_ble_pin(): string {
+    return str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+}
+
 /* ---------- PDO singleton ---------- */
 function db(): PDO {
     static $pdo = null;

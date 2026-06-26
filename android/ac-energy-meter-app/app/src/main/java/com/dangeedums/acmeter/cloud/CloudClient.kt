@@ -123,6 +123,16 @@ class CloudClient(
     suspend fun devices(): DevicesResponse =
         http.get("$baseUrl/meter/api/devices.php").body()
 
+    /**
+     * Public, no-auth check used by the BLE access gate: is this device_id
+     * registered on the server? Unregistered devices stay open over BLE so new
+     * units can be provisioned.
+     */
+    suspend fun bleRegistered(deviceId: String): BleRegisteredResponse =
+        http.get("$baseUrl/meter/api/ble_registered.php") {
+            parameter("device_id", deviceId)
+        }.body()
+
     /** Refresh the CSRF token using the existing session cookie. No-op if not logged in. */
     suspend fun refreshCsrf(): String? {
         val resp: CsrfResponse = runCatching {

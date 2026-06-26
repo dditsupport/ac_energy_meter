@@ -36,6 +36,10 @@ CREATE TABLE IF NOT EXISTS energy_devices (
   capacity_kw     DECIMAL(5,2) NULL,
   notes           TEXT         NULL,
   owner_user_id   INT UNSIGNED NULL,
+  -- App-side BLE access PIN. Auto-generated at registration; the firmware
+  -- never sees it. The Android app caches authorised PINs at login and gates
+  -- BLE access locally.
+  ble_pin         VARCHAR(12)  NULL,
   first_seen_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE SET NULL,
   KEY idx_owner   (owner_user_id)

@@ -57,6 +57,17 @@ data class CloudDevice(
     val last_boot_id: Int? = null,
     val total_readings: Long? = null,
     val log_interval_sec: Int? = null,
+    /** BLE access PIN for this device. Cached locally to gate BLE access. */
+    val ble_pin: String? = null,
+)
+
+/* ---------- ble_registered.php ---------- */
+
+@Serializable
+data class BleRegisteredResponse(
+    val ok: Boolean,
+    val registered: Boolean = false,
+    val error: String? = null,
 )
 
 /* ---------- readings.php ---------- */

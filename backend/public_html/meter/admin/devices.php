@@ -4,21 +4,23 @@ require_once __DIR__ . '/../api/_db.php';
 require_admin();
 $pdo = db();
 
-// The relay_* columns arrive with migration 003; fall back gracefully if the
-// DB hasn't been migrated yet so the page still renders.
+// Optional columns arrive with migrations (relay_* = 003, ble_pin = 004).
+// Try progressively fewer of them so the page still renders on an un-migrated
+// DB.
 $base_cols  = 'd.device_id, d.friendly_name, d.location, d.capacity_kw,
                d.owner_user_id, u.username AS owner_username, d.first_seen_at,
                m.fw_version, m.last_sync_at, m.last_seq, m.last_boot_id,
                m.total_readings, m.log_interval_sec';
-$relay_cols = ', m.relay_on, m.relay_mode, m.relay_reported_at';
+$opt_relay  = ', m.relay_on, m.relay_mode, m.relay_reported_at';
+$opt_pin    = ', d.ble_pin';
 $from       = ' FROM energy_devices d
                 LEFT JOIN users        u ON u.id = d.owner_user_id
                 LEFT JOIN device_meta  m ON m.device_id = d.device_id
                ORDER BY d.friendly_name';
-try {
-    $devices = $pdo->query("SELECT $base_cols $relay_cols $from")->fetchAll();
-} catch (Throwable $e) {
-    $devices = $pdo->query("SELECT $base_cols $from")->fetchAll();
+$devices = [];
+foreach ([$opt_pin . $opt_relay, $opt_relay, $opt_pin, ''] as $extra) {
+    try { $devices = $pdo->query("SELECT $base_cols $extra $from")->fetchAll(); break; }
+    catch (Throwable $e) { /* missing column — try a leaner select */ }
 }
 
 $users = $pdo->query('SELECT id, username FROM users ORDER BY username')->fetchAll();
@@ -53,6 +55,9 @@ $users = $pdo->query('SELECT id, username FROM users ORDER BY username')->fetchA
   .relay-dot.stale   { background: #d8a200; }
   .relay-dot.unknown { background: #c8ccc4; }
   table.devices .col-relay .relay-label { color: var(--muted); vertical-align: middle; }
+  table.devices .col-pin   { white-space: nowrap; }
+  table.devices .col-pin code.pin { font-size: 0.95rem; letter-spacing: 0.06em; }
+  table.devices .col-pin .regen-pin { margin-left: 0.4rem; padding: 0.1rem 0.45rem; font-size: 0.9rem; }
   table.devices .actions   { white-space: nowrap; display: flex; gap: 0.5rem; align-items: center; }
   table.devices .actions a { font-size: 0.85rem; }
   /* Visual grouping: zebra stripe + breathing room */
@@ -84,6 +89,7 @@ $users = $pdo->query('SELECT id, username FROM users ORDER BY username')->fetchA
         <th>FW</th>
         <th class="col-rows">Rows</th>
         <th>Relay</th>
+        <th>BLE&nbsp;PIN</th>
         <th></th>
       </tr></thead>
       <tbody>
@@ -122,6 +128,10 @@ $users = $pdo->query('SELECT id, username FROM users ORDER BY username')->fetchA
               data-at="<?= h((string)($d['relay_reported_at'] ?? '')) ?>"
               data-int="<?= (int)($d['log_interval_sec'] ?? 900) ?>">
             <span class="relay-dot unknown"></span><span class="relay-label">—</span>
+          </td>
+          <td class="col-pin">
+            <code class="pin"><?= h((string)($d['ble_pin'] ?? '—')) ?></code>
+            <button class="regen-pin" title="Generate a new BLE PIN">↻</button>
           </td>
           <td class="actions">
             <button class="rename">Save</button>
@@ -222,6 +232,14 @@ document.querySelectorAll('button.delete-device').forEach(btn => btn.addEventLis
   const r = await post('delete', { device_id: tr.dataset.id });
   if (!r.ok) { alert('Error: ' + r.error); return; }
   tr.remove();
+}));
+
+document.querySelectorAll('button.regen-pin').forEach(btn => btn.addEventListener('click', async () => {
+  const tr = btn.closest('tr');
+  if (!confirm('Generate a new BLE PIN? The old PIN stops working; the device owner must re-enter the new one in the app after their next login.')) return;
+  const r = await post('regen_pin', { device_id: tr.dataset.id });
+  if (!r.ok) { alert('Error: ' + r.error); return; }
+  tr.querySelector('.pin').textContent = r.ble_pin;
 }));
 
 /* ---------- Relay schedule editor ---------- */

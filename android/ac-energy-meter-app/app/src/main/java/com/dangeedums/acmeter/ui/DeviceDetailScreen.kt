@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -39,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -49,6 +51,7 @@ fun DeviceDetailScreen(
     onBack: () -> Unit,
     onConfigureWifi: () -> Unit,
     onConfigureServer: () -> Unit,
+    onGoToCloud: () -> Unit = {},
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     var showClaim by remember { mutableStateOf(false) }
@@ -72,11 +75,11 @@ fun DeviceDetailScreen(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(deviceName, style = MaterialTheme.typography.titleLarge)
-                Text(connStateLabel(ui.connState),
+                Text(if (ui.access == AccessState.Unlocked) connStateLabel(ui.connState) else "Locked",
                      style = MaterialTheme.typography.bodySmall,
                      color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (ui.connState == ConnState.Connecting) {
+            if (ui.access == AccessState.Unlocked && ui.connState == ConnState.Connecting) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp))
             }
         }
@@ -84,6 +87,17 @@ fun DeviceDetailScreen(
         ui.error?.let {
             Spacer(Modifier.height(8.dp))
             Text(it, color = MaterialTheme.colorScheme.error)
+        }
+
+        if (ui.access != AccessState.Unlocked) {
+            Spacer(Modifier.height(16.dp))
+            AccessGateCard(
+                ui          = ui,
+                onSubmitPin = { vm.submitPin(it) },
+                onRetry     = { vm.runAccessGate() },
+                onGoToCloud = onGoToCloud,
+            )
+            return@Column
         }
 
         if (ui.connState == ConnState.Failed || ui.connState == ConnState.Disconnected) {
@@ -114,6 +128,78 @@ fun DeviceDetailScreen(
             if (ui.syncStage != SyncStage.Idle) {
                 Spacer(Modifier.height(12.dp))
                 SyncProgressCard(ui)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccessGateCard(
+    ui: DeviceDetailUi,
+    onSubmitPin: (String) -> Unit,
+    onRetry: () -> Unit,
+    onGoToCloud: () -> Unit,
+) {
+    Card(elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            when (ui.access) {
+                AccessState.Checking -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.size(12.dp))
+                        Text("Checking device access…")
+                    }
+                }
+                AccessState.NeedPin -> {
+                    var pin by remember { mutableStateOf("") }
+                    Text("Enter BLE PIN", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "This meter is locked. Enter its PIN to connect over Bluetooth.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = { pin = it.filter(Char::isDigit).take(8) },
+                        label = { Text("PIN") },
+                        singleLine = true,
+                        isError = ui.pinError,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (ui.pinError) {
+                        Text("Incorrect PIN. Try again.",
+                             color = MaterialTheme.colorScheme.error,
+                             style = MaterialTheme.typography.bodySmall)
+                    }
+                    Button(
+                        onClick = { onSubmitPin(pin) },
+                        enabled = pin.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Unlock") }
+                }
+                AccessState.NeedLogin -> {
+                    Text("Sign in required", style = MaterialTheme.typography.titleMedium)
+                    Text(ui.accessMessage,
+                         style = MaterialTheme.typography.bodySmall,
+                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = onGoToCloud, modifier = Modifier.fillMaxWidth()) {
+                        Text("Go to Cloud sign-in")
+                    }
+                }
+                AccessState.Denied -> {
+                    Text("Access denied", style = MaterialTheme.typography.titleMedium)
+                    Text(ui.accessMessage,
+                         style = MaterialTheme.typography.bodySmall,
+                         color = MaterialTheme.colorScheme.error)
+                    OutlinedButton(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+                        Text("Retry")
+                    }
+                }
+                AccessState.Unlocked -> { /* gate not shown */ }
             }
         }
     }

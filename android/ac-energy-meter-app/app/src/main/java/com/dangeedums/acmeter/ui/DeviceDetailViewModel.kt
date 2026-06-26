@@ -14,6 +14,8 @@ import com.dangeedums.acmeter.cloud.CloudClient
 import com.dangeedums.acmeter.cloud.IngestBoot
 import com.dangeedums.acmeter.cloud.IngestPayload
 import com.dangeedums.acmeter.cloud.IngestReading
+import com.dangeedums.acmeter.data.BlePinStore
+import com.dangeedums.acmeter.data.BleUnlockRegistry
 import com.dangeedums.acmeter.data.CloudSessionStore
 import com.juul.kable.NotConnectedException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +35,17 @@ enum class ConnState  { Idle, Connecting, Connected, Disconnected, Failed }
 enum class SyncStage  { Idle, Reading, Forwarding, Acking, Done, Failed }
 enum class ClaimStage { Idle, Submitting, Done, Conflict, Failed }
 
+/**
+ * BLE access gate (server-issued PIN). Until the device is [Unlocked], the
+ * detail screen does not connect over BLE.
+ *   Checking  - deciding whether a PIN is needed
+ *   NeedPin   - registered + we hold the PIN: prompt for it
+ *   NeedLogin - registered but not signed in: ask the user to log in
+ *   Denied    - registered to someone else / can't verify
+ *   Unlocked  - open (unregistered) or PIN accepted -> connect proceeds
+ */
+enum class AccessState { Checking, NeedPin, NeedLogin, Denied, Unlocked }
+
 data class DeviceDetailUi(
     val connState: ConnState = ConnState.Idle,
     val info: DeviceInfoBle? = null,
@@ -44,13 +57,19 @@ data class DeviceDetailUi(
     val syncMessage: String = "",
     val claimStage: ClaimStage = ClaimStage.Idle,
     val claimMessage: String = "",
+    val access: AccessState = AccessState.Checking,
+    val accessMessage: String = "",
+    val pinError: Boolean = false,
 )
 
 class DeviceDetailViewModel(
     application: Application,
     private val address: String,
+    private val deviceName: String,
     private val cloud: CloudClient,
     private val session: CloudSessionStore,
+    private val blePinStore: BlePinStore,
+    private val unlockRegistry: BleUnlockRegistry,
 ) : AndroidViewModel(application) {
 
     private val peripheral = peripheralForAddress(address)
@@ -59,8 +78,70 @@ class DeviceDetailViewModel(
     private val _ui = MutableStateFlow(DeviceDetailUi())
     val ui: StateFlow<DeviceDetailUi> = _ui.asStateFlow()
 
+    // Server device_id derived from the BLE advertising name with no connection:
+    // "Meter-475B78" -> "meter-475b78". Null if the name isn't a meter id.
+    private val deviceId: String? =
+        deviceName.trim().lowercase().takeIf { Regex("^meter-[0-9a-f]{6,}$").matches(it) }
+
     init {
+        runAccessGate()
+    }
+
+    /**
+     * Decide whether BLE access needs a PIN before connecting. See [AccessState].
+     */
+    fun runAccessGate() {
+        _ui.value = _ui.value.copy(access = AccessState.Checking, accessMessage = "", pinError = false)
+        viewModelScope.launch {
+            val id = deviceId
+            // Can't identify it as a meter -> treat as open (e.g. provisioning).
+            if (id == null) { unlockAndConnect(null); return@launch }
+            // Already unlocked this session.
+            if (unlockRegistry.isUnlocked(id)) { unlockAndConnect(id); return@launch }
+            // We hold this device's PIN (own, authorised device) -> ask for it.
+            if (blePinStore.get(id) != null) {
+                _ui.value = _ui.value.copy(access = AccessState.NeedPin)
+                return@launch
+            }
+            // Not in our PIN list. Ask the server whether it's registered at all.
+            val registered = runCatching { cloud.bleRegistered(id) }.getOrNull()
+            when {
+                registered == null ->
+                    deny("Couldn't verify this device. Check your connection and retry.")
+                !registered.registered ->
+                    unlockAndConnect(id)   // unregistered -> open (provisioning)
+                !session.isLoggedIn() ->
+                    _ui.value = _ui.value.copy(
+                        access = AccessState.NeedLogin,
+                        accessMessage = "This meter is registered. Sign in on the Cloud tab to access it over Bluetooth.",
+                    )
+                else ->
+                    deny("This meter is registered to another account. Ask an admin for access.")
+            }
+        }
+    }
+
+    /** Validate a PIN entered by the user against the cached server PIN. */
+    fun submitPin(entered: String) {
+        val id = deviceId ?: return
+        viewModelScope.launch {
+            val expected = blePinStore.get(id)
+            if (expected != null && entered.trim() == expected) {
+                unlockAndConnect(id)
+            } else {
+                _ui.value = _ui.value.copy(pinError = true)
+            }
+        }
+    }
+
+    private fun unlockAndConnect(id: String?) {
+        if (id != null) unlockRegistry.unlock(id)
+        _ui.value = _ui.value.copy(access = AccessState.Unlocked, pinError = false)
         connect()
+    }
+
+    private fun deny(message: String) {
+        _ui.value = _ui.value.copy(access = AccessState.Denied, accessMessage = message)
     }
 
     fun connect() {
@@ -268,6 +349,18 @@ class DeviceDetailViewModel(
                         claimMessage = resp.error ?: "claim failed",
                     )
                 }
+                // A device the user just registered is theirs — keep it unlocked
+                // for this session and refresh the cached PIN map so it stays
+                // unlockable next time.
+                if (resp.ok) {
+                    this@DeviceDetailViewModel.deviceId?.let { unlockRegistry.unlock(it) }
+                    runCatching { cloud.devices() }.getOrNull()?.takeIf { it.ok }?.let { dr ->
+                        val pins = dr.devices.mapNotNull { d ->
+                            d.ble_pin?.takeIf { p -> p.isNotBlank() }?.let { d.device_id.lowercase() to it }
+                        }.toMap()
+                        runCatching { blePinStore.setAll(pins) }
+                    }
+                }
             }.onFailure {
                 _ui.value = _ui.value.copy(
                     claimStage = ClaimStage.Failed,
@@ -314,10 +407,14 @@ class DeviceDetailViewModel(
     }
 
     companion object {
-        fun factory(application: Application, address: String) = viewModelFactory {
+        fun factory(application: Application, address: String, deviceName: String) = viewModelFactory {
             initializer {
                 val app = application as AcMeterApp
-                DeviceDetailViewModel(application, address, app.cloudClient, app.cloudSessionStore)
+                DeviceDetailViewModel(
+                    application, address, deviceName,
+                    app.cloudClient, app.cloudSessionStore,
+                    app.blePinStore, app.bleUnlockRegistry,
+                )
             }
         }
     }
