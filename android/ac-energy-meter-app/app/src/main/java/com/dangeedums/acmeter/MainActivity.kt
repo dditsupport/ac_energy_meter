@@ -177,7 +177,7 @@ private fun NavGraphBuilder.devicesGraph(
             val name    = URLDecoder.decode(parentEntry.arguments?.getString("name") ?: address, "UTF-8")
             val vm: DeviceDetailViewModel = viewModel(
                 viewModelStoreOwner = parentEntry,
-                factory = DeviceDetailViewModel.factory(application, address, name),
+                factory = DeviceDetailViewModel.factory(application, address),
             )
             DeviceDetailScreen(
                 deviceName = name,
@@ -193,10 +193,9 @@ private fun NavGraphBuilder.devicesGraph(
                 nav.getBackStackEntry("device/{address}/{name}")
             }
             val address = URLDecoder.decode(parentEntry.arguments?.getString("address") ?: "", "UTF-8")
-            val name    = URLDecoder.decode(parentEntry.arguments?.getString("name") ?: address, "UTF-8")
             val parentVm: DeviceDetailViewModel = viewModel(
                 viewModelStoreOwner = parentEntry,
-                factory = DeviceDetailViewModel.factory(application, address, name),
+                factory = DeviceDetailViewModel.factory(application, address),
             )
             // Per-screen VM but uses the parent's already-connected MeterGatt.
             val vm: WifiConfigViewModel = remember(parentVm) { WifiConfigViewModel(parentVm.gatt) }
@@ -207,10 +206,9 @@ private fun NavGraphBuilder.devicesGraph(
                 nav.getBackStackEntry("device/{address}/{name}")
             }
             val address = URLDecoder.decode(parentEntry.arguments?.getString("address") ?: "", "UTF-8")
-            val name    = URLDecoder.decode(parentEntry.arguments?.getString("name") ?: address, "UTF-8")
             val parentVm: DeviceDetailViewModel = viewModel(
                 viewModelStoreOwner = parentEntry,
-                factory = DeviceDetailViewModel.factory(application, address, name),
+                factory = DeviceDetailViewModel.factory(application, address),
             )
             ServerConfigScreen(gatt = parentVm.gatt, vm = parentVm, onBack = { nav.popBackStack() })
         }

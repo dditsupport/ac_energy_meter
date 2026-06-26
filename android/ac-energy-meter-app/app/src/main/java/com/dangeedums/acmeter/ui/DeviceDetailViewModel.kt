@@ -65,7 +65,6 @@ data class DeviceDetailUi(
 class DeviceDetailViewModel(
     application: Application,
     private val address: String,
-    private val deviceName: String,
     private val cloud: CloudClient,
     private val session: CloudSessionStore,
     private val blePinStore: BlePinStore,
@@ -78,101 +77,117 @@ class DeviceDetailViewModel(
     private val _ui = MutableStateFlow(DeviceDetailUi())
     val ui: StateFlow<DeviceDetailUi> = _ui.asStateFlow()
 
-    // Server device_id derived from the BLE advertising name with no connection:
-    // "Meter-475B78" -> "meter-475b78". Null if the name isn't a meter id.
-    private val deviceId: String? =
-        deviceName.trim().lowercase().takeIf { Regex("^meter-[0-9a-f]{6,}$").matches(it) }
+    // The canonical device_id, read from the device's Device Info after a brief
+    // connect. The BLE advertising name is unreliable on Android 12+ (the
+    // scanner finds meters by service UUID and may synthesize a placeholder
+    // name), so we never gate on the name — only on this device-reported id.
+    private var pendingId: String? = null
+    private var pendingInfo: DeviceInfoBle? = null
 
     init {
-        runAccessGate()
+        connect()
     }
 
+    /** Re-run the access gate (used by the lock screen's Retry). */
+    fun runAccessGate() = connect()
+
     /**
-     * Decide whether BLE access needs a PIN before connecting. See [AccessState].
+     * Connect, read the real device_id from Device Info, then gate BEFORE
+     * exposing anything. The brief connect leaks nothing (the data stream is
+     * pull-only); if the gate fails we disconnect immediately. See [AccessState].
      */
-    fun runAccessGate() {
-        _ui.value = _ui.value.copy(access = AccessState.Checking, accessMessage = "", pinError = false)
+    fun connect() {
+        if (_ui.value.connState == ConnState.Connecting) return
+        _ui.value = _ui.value.copy(
+            access = AccessState.Checking, accessMessage = "", pinError = false,
+            connState = ConnState.Connecting, error = null,
+        )
         viewModelScope.launch {
-            val id = deviceId
-            // Can't identify it as a meter -> treat as open (e.g. provisioning).
-            if (id == null) { unlockAndConnect(null); return@launch }
-            // Already unlocked this session.
-            if (unlockRegistry.isUnlocked(id)) { unlockAndConnect(id); return@launch }
-            // We hold this device's PIN (own, authorised device) -> ask for it.
-            if (blePinStore.get(id) != null) {
-                _ui.value = _ui.value.copy(access = AccessState.NeedPin)
+            val info = try {
+                withTimeout(20_000) { gatt.connect() }
+                gatt.readDeviceInfo()
+            } catch (t: Throwable) {
+                _ui.value = _ui.value.copy(
+                    connState = ConnState.Failed,
+                    access = AccessState.Denied,
+                    accessMessage = "Couldn't connect to the device. Move closer and retry.",
+                )
                 return@launch
             }
-            // Not in our PIN list. Ask the server whether it's registered at all.
-            val registered = runCatching { cloud.bleRegistered(id) }.getOrNull()
+
+            val id = info.deviceId.trim().lowercase()
+            pendingId = id
+            pendingInfo = info
+            _ui.value = _ui.value.copy(connState = ConnState.Connected)
+
             when {
-                registered == null ->
-                    deny("Couldn't verify this device. Check your connection and retry.")
-                !registered.registered ->
-                    unlockAndConnect(id)   // unregistered -> open (provisioning)
-                !session.isLoggedIn() ->
-                    _ui.value = _ui.value.copy(
-                        access = AccessState.NeedLogin,
-                        accessMessage = "This meter is registered. Sign in on the Cloud tab to access it over Bluetooth.",
-                    )
-                else ->
-                    deny("This meter is registered to another account. Ask an admin for access.")
+                unlockRegistry.isUnlocked(id) -> proceedUnlocked(id, info)
+                blePinStore.get(id) != null ->
+                    _ui.value = _ui.value.copy(access = AccessState.NeedPin)
+                else -> {
+                    val registered = runCatching { cloud.bleRegistered(id) }.getOrNull()
+                    when {
+                        registered == null ->
+                            lockAndDisconnect(AccessState.Denied,
+                                "Couldn't verify this device. Check your connection and retry.")
+                        !registered.registered ->
+                            proceedUnlocked(id, info)   // unregistered -> open (provisioning)
+                        !session.isLoggedIn() ->
+                            lockAndDisconnect(AccessState.NeedLogin,
+                                "This meter is registered. Sign in on the Cloud tab to access it over Bluetooth.")
+                        else ->
+                            lockAndDisconnect(AccessState.Denied,
+                                "This meter is registered to another account. Ask an admin for access.")
+                    }
+                }
             }
         }
     }
 
     /** Validate a PIN entered by the user against the cached server PIN. */
     fun submitPin(entered: String) {
-        val id = deviceId ?: return
+        val id   = pendingId ?: return
+        val info = pendingInfo ?: return
         viewModelScope.launch {
             val expected = blePinStore.get(id)
             if (expected != null && entered.trim() == expected) {
-                unlockAndConnect(id)
+                proceedUnlocked(id, info)
             } else {
                 _ui.value = _ui.value.copy(pinError = true)
             }
         }
     }
 
-    private fun unlockAndConnect(id: String?) {
-        if (id != null) unlockRegistry.unlock(id)
-        _ui.value = _ui.value.copy(access = AccessState.Unlocked, pinError = false)
-        connect()
-    }
-
-    private fun deny(message: String) {
-        _ui.value = _ui.value.copy(access = AccessState.Denied, accessMessage = message)
-    }
-
-    fun connect() {
-        if (_ui.value.connState == ConnState.Connecting) return
-        _ui.value = _ui.value.copy(connState = ConnState.Connecting, error = null)
-        viewModelScope.launch {
-            try {
-                withTimeout(20_000) { gatt.connect() }
-                _ui.value = _ui.value.copy(connState = ConnState.Connected)
-                refreshInfo()
-                // Set wall time from the phone — best-effort, helps the device
-                // if its RTC is missing/dead.
-                runCatching { gatt.setWallTime(nowIso()) }
-                // Keep the Wi-Fi line in Device Info live as the device
-                // connects / drops, without a manual refresh.
-                gatt.observeWifiStatus()
-                    .onEach { _ui.value = _ui.value.copy(wifi = it) }
-                    .catch { /* connection ended; ignore */ }
-                    .launchIn(viewModelScope)
-                // Relay state: initial read + live pushes for the toggle UI.
-                runCatching { gatt.readRelay() }.getOrNull()?.let {
-                    _ui.value = _ui.value.copy(relay = it)
-                }
-                gatt.observeRelay()
-                    .onEach { _ui.value = _ui.value.copy(relay = it) }
-                    .catch { /* connection ended; ignore */ }
-                    .launchIn(viewModelScope)
-            } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(connState = ConnState.Failed, error = t.message ?: "connect failed")
-            }
+    /** Gate passed: surface device info and start the normal live observers. */
+    private suspend fun proceedUnlocked(id: String, info: DeviceInfoBle) {
+        unlockRegistry.unlock(id)
+        _ui.value = _ui.value.copy(
+            access = AccessState.Unlocked, connState = ConnState.Connected,
+            info = info, pinError = false, error = null,
+        )
+        // Set wall time from the phone — best-effort, helps the device if its
+        // RTC is missing/dead.
+        runCatching { gatt.setWallTime(nowIso()) }
+        runCatching { gatt.readWifiStatus() }.getOrNull()?.let {
+            _ui.value = _ui.value.copy(wifi = it)
         }
+        gatt.observeWifiStatus()
+            .onEach { _ui.value = _ui.value.copy(wifi = it) }
+            .catch { /* connection ended; ignore */ }
+            .launchIn(viewModelScope)
+        runCatching { gatt.readRelay() }.getOrNull()?.let {
+            _ui.value = _ui.value.copy(relay = it)
+        }
+        gatt.observeRelay()
+            .onEach { _ui.value = _ui.value.copy(relay = it) }
+            .catch { /* connection ended; ignore */ }
+            .launchIn(viewModelScope)
+    }
+
+    private fun lockAndDisconnect(state: AccessState, message: String) {
+        _ui.value = _ui.value.copy(access = state, accessMessage = message,
+                                    connState = ConnState.Disconnected)
+        viewModelScope.launch { runCatching { gatt.disconnect() } }
     }
 
     fun disconnect() {
@@ -353,7 +368,7 @@ class DeviceDetailViewModel(
                 // for this session and refresh the cached PIN map so it stays
                 // unlockable next time.
                 if (resp.ok) {
-                    this@DeviceDetailViewModel.deviceId?.let { unlockRegistry.unlock(it) }
+                    pendingId?.let { unlockRegistry.unlock(it) }
                     runCatching { cloud.devices() }.getOrNull()?.takeIf { it.ok }?.let { dr ->
                         val pins = dr.devices.mapNotNull { d ->
                             d.ble_pin?.takeIf { p -> p.isNotBlank() }?.let { d.device_id.lowercase() to it }
@@ -407,11 +422,11 @@ class DeviceDetailViewModel(
     }
 
     companion object {
-        fun factory(application: Application, address: String, deviceName: String) = viewModelFactory {
+        fun factory(application: Application, address: String) = viewModelFactory {
             initializer {
                 val app = application as AcMeterApp
                 DeviceDetailViewModel(
-                    application, address, deviceName,
+                    application, address,
                     app.cloudClient, app.cloudSessionStore,
                     app.blePinStore, app.bleUnlockRegistry,
                 )
