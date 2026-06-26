@@ -185,7 +185,9 @@ async function load() {
       interaction: { mode: 'nearest', intersect: false },
       scales: {
         x: {
-          type: 'linear', min: 0, max: 23,
+          // Span the full day 00:00–24:00 so the final hour (23:00 bucket)
+          // isn't clipped against the right edge.
+          type: 'linear', min: 0, max: 24,
           title: { display: true, text: 'Hour of day (IST)' },
           ticks: { stepSize: 1, callback: v => pad(v) + ':00' },
         },
