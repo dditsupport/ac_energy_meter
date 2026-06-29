@@ -42,6 +42,13 @@ $month_ist = date('Y-m');
     padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 6px;
   }
   #report-empty { color: var(--muted); padding: 2rem 0; text-align: center; }
+  .report-summary { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin-top: 0.85rem; }
+  .report-summary .day-total { display: inline-flex; align-items: center; gap: 0.4rem;
+    font-size: 0.85rem; }
+  .report-summary .dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; flex: none; }
+  .report-summary .day-total b { font-variant-numeric: tabular-nums; }
+  .report-summary .day-total .unit { color: var(--muted); }
+  .report-summary .grand { font-weight: 600; }
 </style>
 </head><body>
 
@@ -90,6 +97,7 @@ $month_ist = date('Y-m');
     <h2 id="report-title">Weekly — hourly kWh by day</h2>
     <p class="muted" id="report-sub">Each line is one day; compare the hour-by-hour kWh across days.</p>
     <canvas id="report-chart" height="150"></canvas>
+    <div id="report-summary" class="report-summary"></div>
     <div id="report-empty" hidden>No readings in this range.</div>
   </section>
 </main>
@@ -114,6 +122,33 @@ function dayLabel(ymd) {           // "2026-06-24" -> "24-Jun"
 }
 function colorFor(i, n) {          // evenly-spaced hues, distinct per day
   return `hsl(${Math.round((i * 360) / Math.max(1, n))}, 65%, 50%)`;
+}
+
+// Day-wise totals below the chart: colour dot + day + that day's total kWh,
+// plus a period total. Day order/colours match the chart datasets.
+function renderSummary(days, byDay) {
+  const el = document.getElementById('report-summary');
+  el.innerHTML = '';
+  if (!days.length) return;
+  let grand = 0;
+  days.forEach((day, i) => {
+    const total = Object.values(byDay.get(day)).reduce((a, v) => a + (v || 0), 0);
+    grand += total;
+    const chip = document.createElement('span');
+    chip.className = 'day-total';
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = colorFor(i, days.length);
+    const txt = document.createElement('span');
+    txt.innerHTML = `${dayLabel(day)}: <b>${total.toFixed(2)}</b> <span class="unit">kWh</span>`;
+    chip.appendChild(dot);
+    chip.appendChild(txt);
+    el.appendChild(chip);
+  });
+  const tot = document.createElement('span');
+  tot.className = 'day-total grand';
+  tot.innerHTML = `Total: <b>${grand.toFixed(2)}</b> <span class="unit">kWh</span>`;
+  el.appendChild(tot);
 }
 
 let mode = 'weekly';
@@ -176,6 +211,8 @@ async function load() {
              tension: 0.25, borderWidth: 2, pointRadius: 2 };
   });
 
+  renderSummary(days, byDay);
+
   if (chart) chart.destroy();
   chart = new Chart(document.getElementById('report-chart').getContext('2d'), {
     type: 'line',
@@ -194,7 +231,8 @@ async function load() {
         y: { beginAtZero: true, title: { display: true, text: 'kWh' } },
       },
       plugins: {
-        legend: { display: true, position: 'bottom' },
+        // The day/colour/total summary below the chart serves as the legend.
+        legend: { display: false },
         tooltip: {
           callbacks: {
             title: items => items.length ? pad(items[0].parsed.x) + ':00' : '',
