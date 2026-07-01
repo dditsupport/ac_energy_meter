@@ -109,6 +109,9 @@ CREATE TABLE IF NOT EXISTS device_relay_schedule (
   -- Monotonic version. Bumped on every update. Firmware uses it to detect
   -- whether the schedule has changed since the last poll.
   version       INT UNSIGNED    NOT NULL DEFAULT 1,
+  -- Relay wired to the NC contact: schedule + manual control are expressed in
+  -- LOAD terms and the firmware inverts the coil (coil de-energized = load on).
+  invert        TINYINT(1)      NOT NULL DEFAULT 0,
   updated_at    TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP
                                 ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (device_id) REFERENCES energy_devices(device_id) ON DELETE CASCADE

@@ -150,9 +150,15 @@ $users = $pdo->query('SELECT id, username FROM users ORDER BY username')->fetchA
 <dialog id="relay-dialog" class="relay-dialog">
   <form method="dialog">
     <h3 style="margin:0 0 0.5rem">Relay schedule for <span id="relay-dev"></span></h3>
-    <p class="muted" style="margin:0 0 0.75rem">
-      Windows turn the relay <b>on</b> at the start time and <b>off</b> at the end time, only on the
-      selected weekdays. No windows = relay always off.
+    <label class="relay-invert" style="display:flex; align-items:center; gap:0.5rem; margin:0 0 0.6rem">
+      <input type="checkbox" id="relay-invert">
+      <span>Load wired to relay <b>NC</b> — windows &amp; manual control mean the <b>LOAD</b>
+        (coil energizes when the load should be OFF; fail-safe/power-loss = load ON)</span>
+    </label>
+    <p class="muted" id="relay-help" style="margin:0 0 0.75rem">
+      Windows turn the <span class="rly-word">relay</span> <b>on</b> at the start time and <b>off</b>
+      at the end time, only on the selected weekdays. No windows = <span class="rly-word">relay</span>
+      always off.
       <br>If <b>Off</b> is earlier than <b>On</b>, the window runs <b>overnight</b> into the next day
       — e.g. On 08:00, Off 02:00 means on at 8 AM and off at 2 AM the next morning. The <b>+1 day</b>
       tick lights up and the selected days are the days the window <i>starts</i>.
@@ -335,11 +341,19 @@ document.querySelectorAll('button.relay').forEach(btn => btn.addEventListener('c
   rowsEl.innerHTML = '';
   const r = await postRelay('get', { device_id: currentDev });
   if (!r.ok) { alert('Error: ' + r.error); return; }
+  document.getElementById('relay-invert').checked = !!r.invert;
+  applyInvertWording(!!r.invert);
   const schedule = r.schedule || [];
   if (schedule.length === 0) renderRow({ days:[1,2,3,4,5], on:'06:00', off:'18:00' });
   else schedule.forEach(renderRow);
   dlg.showModal();
 }));
+
+// Swap "relay" <-> "load" wording in the help text when NC-invert is on.
+function applyInvertWording(inv) {
+  document.querySelectorAll('#relay-help .rly-word').forEach(el => el.textContent = inv ? 'load' : 'relay');
+}
+document.getElementById('relay-invert').addEventListener('change', e => applyInvertWording(e.target.checked));
 
 document.getElementById('relay-add'   ).addEventListener('click', () => renderRow({ days:[], on:'06:00', off:'18:00' }));
 document.getElementById('relay-cancel').addEventListener('click', () => dlg.close());
@@ -348,6 +362,7 @@ document.getElementById('relay-save'  ).addEventListener('click', async () => {
   const r = await postRelay('set', {
     device_id: currentDev,
     schedule_json: JSON.stringify(windows),
+    invert: document.getElementById('relay-invert').checked ? 1 : 0,
   });
   if (!r.ok) { alert('Error: ' + (r.detail || r.error)); return; }
   alert('Saved (version ' + r.version + '). Takes effect on the device\'s next sync.');

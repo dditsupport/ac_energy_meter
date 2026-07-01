@@ -26,10 +26,15 @@ enum class Mode : uint8_t { AUTO = 0, FORCE_ON = 1, FORCE_OFF = 2 };
 
 void begin();
 
-// Apply a freshly-fetched schedule. Caller passes the parsed JSON array
-// as a string. Compares against the stored version; persists + reapplies
-// on change. Pass empty array to clear.
-void apply(uint32_t version, const String &schedule_json_array);
+// Apply a freshly-fetched schedule + invert flag. Caller passes the parsed
+// JSON array as a string. Compares against the stored version/invert; persists
+// + reapplies on change. Pass empty array to clear.
+//
+// invert = true when the load is wired to the relay NC contact: the schedule
+// and manual control are then expressed in LOAD terms and the firmware flips
+// the coil (coil de-energized = load on). Independent of RELAY_ACTIVE_HIGH
+// (which is the electrical control polarity of the relay/opto board).
+void apply(uint32_t version, const String &schedule_json_array, bool invert);
 
 // Last version we accepted. Firmware sends this back so the server can
 // short-circuit on no-change later if it wants to. Currently informational.
@@ -39,7 +44,7 @@ uint32_t version();
 // desired on/off state from the cached schedule + local time, drives GPIO.
 void tick();
 
-// True if the relay is currently energised.
+// True if the LOAD is currently on (accounts for NC invert).
 bool is_on();
 
 // Manual override control. set_mode() drives the GPIO immediately.

@@ -202,14 +202,25 @@ if ($effective_interval > 0) {
 }
 
 // Attach the relay schedule (if any). Firmware uses 'relay_version' to skip
-// reapplying when nothing has changed.
-$st = $pdo->prepare(
-    'SELECT schedule_json, version FROM device_relay_schedule WHERE device_id = ?'
-);
-$st->execute([$device_id]);
-if ($srow = $st->fetch()) {
+// reapplying when nothing has changed. 'invert' arrives with migration 005;
+// fall back gracefully so ingest keeps working on a pre-005 DB.
+try {
+    $st = $pdo->prepare(
+        'SELECT schedule_json, version, invert FROM device_relay_schedule WHERE device_id = ?'
+    );
+    $st->execute([$device_id]);
+    $srow = $st->fetch();
+} catch (Throwable $e) {
+    $st = $pdo->prepare(
+        'SELECT schedule_json, version FROM device_relay_schedule WHERE device_id = ?'
+    );
+    $st->execute([$device_id]);
+    $srow = $st->fetch();
+}
+if ($srow) {
     $resp['relay_version']  = (int)$srow['version'];
     $resp['relay_schedule'] = json_decode($srow['schedule_json'], true) ?: [];
+    $resp['relay_invert']   = (bool)($srow['invert'] ?? false);
 }
 
 json_response(200, $resp);

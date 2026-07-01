@@ -117,13 +117,22 @@
 #define LED_TX_PULSE_MS         800       // how long the TX flicker lasts per POST
 
 // ---------- Relay output ----------
-// Server-scheduled output (e.g. mains contactor for an inverter / pump).
-// Schedule is fetched in each ingest response and cached in NVS so the
-// relay keeps switching during a Wi-Fi outage. Active-high suits most
-// opto-isolated relay boards; set RELAY_ACTIVE_HIGH 0 for inverted-input
-// modules.
+// Server-scheduled output (e.g. mains contactor for a load / pump). Schedule
+// is fetched in each ingest response and cached in NVS so the relay keeps
+// switching during a Wi-Fi outage.
+//
+// RELAY_ACTIVE_HIGH is the electrical control polarity: 1 = GPIO HIGH energizes
+// the coil; 0 = GPIO LOW/GND energizes (inverted-input opto boards, e.g. a
+// PC817 stage where LOW turns the coil on and HIGH turns it off). This is set
+// per firmware/board. Whether an energized coil means the LOAD is on or off is
+// a separate, per-device "invert" flag pushed from the server (relay_invert),
+// used when the load is wired to the relay NC contact.
+//
+// NOTE: with RELAY_ACTIVE_HIGH 0, add a ~10k pull-up on PIN_RELAY to 3V3 so the
+// line is HIGH during reset and the coil stays de-energized at boot (otherwise
+// active-low boards click the relay ON at power-up). See docs/PINOUT.md.
 #define PIN_RELAY               26
-#define RELAY_ACTIVE_HIGH       1
+#define RELAY_ACTIVE_HIGH       0
 
 // ---------- Time ----------
 #define TZ_INFO                 "IST-5:30"   // POSIX TZ, used by setenv()

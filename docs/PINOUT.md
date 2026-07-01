@@ -54,6 +54,24 @@ below match the 38-pin ESP-WROOM-32D DevKit V1.
 All signal pins live on the **right column** of the board, so wiring stays
 clean.
 
+### Relay control polarity & boot state (PC817 opto)
+
+This build drives the relay through a **PC817 optocoupler**: **GPIO LOW/GND
+energizes** the coil, **GPIO HIGH de-energizes** it. That is *active-low*
+control, so the firmware sets `RELAY_ACTIVE_HIGH 0` in `config.h`.
+
+Active-low boards click the relay **ON** for a few ms at power-up, because
+GPIO 26 sits LOW during reset before the firmware drives it. Add a **~10 kΩ
+pull-up from GPIO 26 to 3V3** so the line idles HIGH at reset → the coil stays
+de-energized at boot.
+
+**Load wiring & the `invert` flag.** If the load is on the relay **NC**
+contact (coil de-energized = load ON, so no coil power while the load is on),
+enable **Admin → Devices → Relay → "Load wired to NC"**. The schedule and the
+app's On/Off then mean the **load**; the firmware energizes the coil only when
+the load should be OFF. Boot / power loss leaves the coil de-energized → for an
+NC load that means **load ON** (fail-safe on).
+
 ## Visual pin reference (board orientation: USB at bottom)
 
 Layout matches the 38-pin ESP-WROOM-32D DevKit V1. Trust the silkscreen

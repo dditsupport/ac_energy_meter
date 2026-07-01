@@ -12,46 +12,60 @@ namespace relay {
 // string in NVS so we can survive reboots even before the first sync.
 static String   s_schedule_json = "[]";
 static uint32_t s_version       = 0;
-static bool     s_state         = false;
+static bool     s_state         = false;  // desired LOAD state (true = load on)
 static bool     s_initialised   = false;
 static Mode     s_mode          = Mode::AUTO;  // RAM-only manual override
+static bool     s_invert        = false;  // relay wired to NC: coil off = load on
 
-static inline void write_pin(bool on) {
+// Drive the GPIO for a desired LOAD state. Two independent inversions compose:
+//   s_invert          - load wiring. NC (invert) => coil de-energized = load on.
+//   RELAY_ACTIVE_HIGH - control polarity. 0 for opto boards (e.g. PC817) where
+//                       GPIO LOW/GND energizes the coil and HIGH de-energizes.
+// s_state always tracks the LOAD state so is_on()/status report load terms.
+static inline void write_pin(bool load_on) {
+  bool coil = s_invert ? !load_on : load_on;  // energize the coil?
 #if RELAY_ACTIVE_HIGH
-  digitalWrite(PIN_RELAY, on ? HIGH : LOW);
+  digitalWrite(PIN_RELAY, coil ? HIGH : LOW);
 #else
-  digitalWrite(PIN_RELAY, on ? LOW : HIGH);
+  digitalWrite(PIN_RELAY, coil ? LOW : HIGH);
 #endif
-  s_state = on;
+  s_state = load_on;
 }
 
 void begin() {
-  pinMode(PIN_RELAY, OUTPUT);
-  write_pin(false);  // fail-safe off at boot
-
   Preferences p;
   p.begin("relay", true);  // read-only first
   s_schedule_json = p.getString("sched", "[]");
   s_version       = p.getUInt("ver",   0);
+  s_invert        = p.getBool("inv",    false);
   p.end();
+
+  pinMode(PIN_RELAY, OUTPUT);
+  // Fail-safe: leave the coil de-energized at boot. write_pin(s_invert) maps to
+  // coil-off in both wirings (load OFF for NO, load ON for NC).
+  write_pin(s_invert);
+
   s_initialised = true;
-  LOG_PRINTF("[relay] boot schedule v=%u json=%s\n",
-                (unsigned)s_version, s_schedule_json.c_str());
+  LOG_PRINTF("[relay] boot schedule v=%u invert=%d json=%s\n",
+                (unsigned)s_version, (int)s_invert, s_schedule_json.c_str());
 }
 
-void apply(uint32_t version, const String &schedule_json_array) {
-  // Skip if neither version nor content changed.
-  if (version == s_version && schedule_json_array == s_schedule_json) return;
+void apply(uint32_t version, const String &schedule_json_array, bool invert) {
+  // Skip if nothing changed.
+  if (version == s_version && schedule_json_array == s_schedule_json &&
+      invert == s_invert) return;
 
   s_schedule_json = schedule_json_array.length() ? schedule_json_array : "[]";
   s_version       = version;
+  s_invert        = invert;
   Preferences p;
   p.begin("relay", false);
   p.putString("sched", s_schedule_json);
   p.putUInt("ver",   s_version);
+  p.putBool("inv",   s_invert);
   p.end();
-  LOG_PRINTF("[relay] schedule updated v=%u: %s\n",
-                (unsigned)s_version, s_schedule_json.c_str());
+  LOG_PRINTF("[relay] schedule updated v=%u invert=%d: %s\n",
+                (unsigned)s_version, (int)s_invert, s_schedule_json.c_str());
   // Re-evaluate immediately so a fresh push takes effect without waiting
   // for the next loop tick.
   tick();
@@ -80,7 +94,8 @@ void set_mode(Mode m) {
 String status_json() {
   StaticJsonDocument<96> doc;
   doc["mode"]          = mode_str();
-  doc["on"]            = s_state;
+  doc["on"]            = s_state;   // LOAD state (accounts for NC invert)
+  doc["invert"]        = s_invert;
   doc["sched_version"] = s_version;
   String out;
   serializeJson(doc, out);

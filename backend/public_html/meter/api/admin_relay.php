@@ -48,21 +48,32 @@ if ($dev === '') json_response(400, ['ok' => false, 'error' => 'bad_input']);
 switch ($action) {
 
 case 'get':
-    $st = $pdo->prepare(
-        'SELECT schedule_json, version FROM device_relay_schedule WHERE device_id = ?'
-    );
-    $st->execute([$dev]);
-    $row = $st->fetch();
+    // `invert` arrives with migration 005; fall back if it's absent.
+    try {
+        $st = $pdo->prepare(
+            'SELECT schedule_json, version, invert FROM device_relay_schedule WHERE device_id = ?'
+        );
+        $st->execute([$dev]);
+        $row = $st->fetch();
+    } catch (Throwable $e) {
+        $st = $pdo->prepare(
+            'SELECT schedule_json, version FROM device_relay_schedule WHERE device_id = ?'
+        );
+        $st->execute([$dev]);
+        $row = $st->fetch();
+    }
     json_response(200, [
         'ok'       => true,
         'schedule' => $row ? json_decode($row['schedule_json'], true) : [],
         'version'  => $row ? (int)$row['version'] : 0,
+        'invert'   => $row ? (bool)($row['invert'] ?? false) : false,
     ]);
 
 case 'set':
     $json = (string)($_POST['schedule_json'] ?? '');
     $parsed = validate_schedule($json);  // throws on bad input
     $norm   = json_encode($parsed, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    $invert = (int)(bool)($_POST['invert'] ?? 0);
 
     // Ensure the device row exists (FK constraint).
     $exists = $pdo->prepare('SELECT 1 FROM energy_devices WHERE device_id = ?');
@@ -70,13 +81,25 @@ case 'set':
     if (!$exists->fetchColumn()) {
         json_response(404, ['ok' => false, 'error' => 'no_such_device']);
     }
-    $pdo->prepare(
-        'INSERT INTO device_relay_schedule (device_id, schedule_json, version)
-              VALUES (?, ?, 1)
-         ON DUPLICATE KEY UPDATE
-              schedule_json = VALUES(schedule_json),
-              version       = version + 1'
-    )->execute([$dev, $norm]);
+    // Try with invert; fall back to a schedule-only upsert on a pre-005 DB.
+    try {
+        $pdo->prepare(
+            'INSERT INTO device_relay_schedule (device_id, schedule_json, version, invert)
+                  VALUES (?, ?, 1, ?)
+             ON DUPLICATE KEY UPDATE
+                  schedule_json = VALUES(schedule_json),
+                  invert        = VALUES(invert),
+                  version       = version + 1'
+        )->execute([$dev, $norm, $invert]);
+    } catch (Throwable $e) {
+        $pdo->prepare(
+            'INSERT INTO device_relay_schedule (device_id, schedule_json, version)
+                  VALUES (?, ?, 1)
+             ON DUPLICATE KEY UPDATE
+                  schedule_json = VALUES(schedule_json),
+                  version       = version + 1'
+        )->execute([$dev, $norm]);
+    }
 
     $st = $pdo->prepare('SELECT version FROM device_relay_schedule WHERE device_id = ?');
     $st->execute([$dev]);

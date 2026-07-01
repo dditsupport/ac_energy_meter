@@ -269,17 +269,18 @@ static bool post_batch(uint64_t snapshot_seq, uint64_t &out_acked_seq) {
   }
 
   // Optional: server-pushed relay schedule. The server attaches relay_version
-  // (uint) and relay_schedule (array) to every ingest response. relay::apply()
-  // is a no-op when nothing changed.
+  // (uint), relay_schedule (array) and relay_invert (bool) to every ingest
+  // response. relay::apply() is a no-op when nothing changed.
   if (rdoc.containsKey("relay_version")) {
     uint32_t rv = rdoc["relay_version"] | 0;
+    bool inv    = rdoc["relay_invert"] | false;
     String sched_json;
     if (rdoc.containsKey("relay_schedule")) {
       serializeJson(rdoc["relay_schedule"], sched_json);
     } else {
       sched_json = "[]";
     }
-    relay::apply(rv, sched_json);
+    relay::apply(rv, sched_json, inv);
   }
 
   // Server-time fallback: if neither the DS3231 nor NTP gave us a wall
